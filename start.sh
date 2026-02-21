@@ -35,6 +35,15 @@ if ! curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
     read -p "Press Enter to continue anyway, or Ctrl+C to exit..."
 fi
 
+# Check if frontend dependencies are installed
+if [ ! -d "frontend/node_modules" ]; then
+    echo ""
+    echo "ERROR: Frontend dependencies not installed!"
+    echo "Please run: cd frontend && npm install && cd .."
+    echo ""
+    exit 1
+fi
+
 # Create PID file directory
 mkdir -p .pids
 

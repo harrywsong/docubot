@@ -33,28 +33,39 @@ Double-click `stop.bat`
 
 ## 🔧 First Time Setup
 
-Before running the application for the first time:
+**IMPORTANT:** Run these commands before starting the application for the first time:
 
-1. **Install dependencies:**
+1. **Install Python dependencies:**
    ```bash
-   # Backend
    pip install -r requirements.txt
-   
-   # Frontend
+   ```
+
+2. **Install frontend dependencies:**
+   ```bash
    cd frontend
    npm install
    cd ..
    ```
 
-2. **Download the vision model:**
+3. **Download the vision model:**
    ```bash
    ollama pull qwen2.5-vl:7b
    ```
 
-3. **Make scripts executable (macOS/Linux only):**
+4. **Make scripts executable (macOS/Linux only):**
    ```bash
-   chmod +x start.sh stop.sh
+   chmod +x start.sh stop.sh check-setup.sh
    ```
+
+5. **Verify setup (optional but recommended):**
+   ```bash
+   # Windows
+   check-setup.bat
+   
+   # macOS/Linux
+   ./check-setup.sh
+   ```
+   This will check if all dependencies are installed correctly.
 
 ---
 

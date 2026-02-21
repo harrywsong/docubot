@@ -40,6 +40,16 @@ if errorlevel 1 (
     pause
 )
 
+REM Check if frontend dependencies are installed
+if not exist "frontend\node_modules\" (
+    echo.
+    echo ERROR: Frontend dependencies not installed!
+    echo Please run: cd frontend ^&^& npm install ^&^& cd ..
+    echo.
+    pause
+    exit /b 1
+)
+
 REM Start backend server
 echo.
 echo Starting backend API server...
