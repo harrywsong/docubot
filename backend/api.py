@@ -60,9 +60,8 @@ async def lifespan(app: FastAPI):
     # Ensure data directories exist
     Config.ensure_data_directories()
     
-    # Initialize database
+    # Initialize database (schema is initialized in __init__)
     db_manager = DatabaseManager(Config.SQLITE_PATH)
-    db_manager.initialize()
     
     # Initialize components
     folder_manager = FolderManager(db_manager)

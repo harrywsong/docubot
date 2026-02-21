@@ -1,6 +1,10 @@
 # Data directory
 data/
 
+# Logs and PIDs
+*.log
+.pids/
+
 # Python
 __pycache__/
 *.py[cod]

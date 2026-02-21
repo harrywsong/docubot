@@ -1,71 +1,89 @@
 #!/bin/bash
+# RAG Chatbot Startup Script for macOS/Linux
+# This script starts both the backend API server and frontend development server
 
-# RAG Chatbot Startup Script
-# This script starts both the backend API and frontend dev server
-
-echo "🚀 Starting RAG Chatbot..."
+echo "========================================"
+echo "RAG Chatbot with Vision - Starting..."
+echo "========================================"
 echo ""
 
-# Check if Python is available
+# Check if Python is installed
 if ! command -v python3 &> /dev/null; then
-    echo "❌ Python 3 is not installed. Please install Python 3.8 or higher."
+    echo "ERROR: Python 3 is not installed"
+    echo "Please install Python 3.10 or higher from https://www.python.org/"
     exit 1
 fi
 
-# Check if Node.js is available
+# Check if Node.js is installed
 if ! command -v node &> /dev/null; then
-    echo "❌ Node.js is not installed. Please install Node.js 18 or higher."
+    echo "ERROR: Node.js is not installed"
+    echo "Please install Node.js from https://nodejs.org/"
     exit 1
 fi
 
-# Check if backend dependencies are installed
-if [ ! -d "venv" ] && [ ! -f ".venv/bin/activate" ]; then
-    echo "⚠️  Virtual environment not found. Creating one..."
-    python3 -m venv venv
-    source venv/bin/activate
-    pip install -r requirements.txt
-else
-    source venv/bin/activate 2>/dev/null || source .venv/bin/activate 2>/dev/null
+# Check if Ollama is running
+echo "Checking Ollama status..."
+if ! curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+    echo ""
+    echo "WARNING: Ollama is not running!"
+    echo "Please start Ollama before continuing."
+    echo ""
+    echo "To start Ollama:"
+    echo "  1. Open a new terminal"
+    echo "  2. Run: ollama serve"
+    echo ""
+    read -p "Press Enter to continue anyway, or Ctrl+C to exit..."
 fi
 
-# Check if frontend dependencies are installed
-if [ ! -d "frontend/node_modules" ]; then
-    echo "📦 Installing frontend dependencies..."
-    cd frontend
-    npm install
-    cd ..
-fi
+# Create PID file directory
+mkdir -p .pids
 
+# Start backend server
 echo ""
-echo "✅ Dependencies ready"
-echo ""
-
-# Start backend in background
-echo "🔧 Starting backend API on http://127.0.0.1:8000..."
-python3 -m uvicorn backend.api:app --host 127.0.0.1 --port 8000 &
+echo "Starting backend API server..."
+python3 -m uvicorn backend.api:app --host 0.0.0.0 --port 8000 > backend.log 2>&1 &
 BACKEND_PID=$!
+echo $BACKEND_PID > .pids/backend.pid
+echo "Backend PID: $BACKEND_PID"
 
-# Wait for backend to start
+# Wait a moment for backend to start
 sleep 3
 
-# Start frontend in background
-echo "🎨 Starting frontend on http://localhost:3000..."
+# Start frontend server
+echo "Starting frontend development server..."
 cd frontend
-npm run dev &
+npm run dev > ../frontend.log 2>&1 &
 FRONTEND_PID=$!
+echo $FRONTEND_PID > ../.pids/frontend.pid
+cd ..
+echo "Frontend PID: $FRONTEND_PID"
 
 echo ""
-echo "✨ RAG Chatbot is running!"
+echo "========================================"
+echo "RAG Chatbot is running!"
+echo "========================================"
 echo ""
-echo "📍 Frontend: http://localhost:3000"
-echo "📍 Backend API: http://127.0.0.1:8000"
-echo "📍 API Docs: http://127.0.0.1:8000/docs"
+echo "Backend API: http://localhost:8000"
+echo "Frontend UI: http://localhost:5173"
 echo ""
-echo "Press Ctrl+C to stop all services"
+echo "Logs are being written to:"
+echo "  - backend.log"
+echo "  - frontend.log"
 echo ""
+echo "To stop the application, run: ./stop.sh"
+echo ""
+echo "Opening browser in 5 seconds..."
+sleep 5
 
-# Wait for Ctrl+C
-trap "echo ''; echo '🛑 Stopping services...'; kill $BACKEND_PID $FRONTEND_PID 2>/dev/null; exit 0" INT
+# Open browser (works on macOS and most Linux)
+if command -v open &> /dev/null; then
+    # macOS
+    open http://localhost:5173
+elif command -v xdg-open &> /dev/null; then
+    # Linux
+    xdg-open http://localhost:5173
+fi
 
-# Keep script running
-wait
+echo ""
+echo "Application is running in the background!"
+echo "Check backend.log and frontend.log for output."

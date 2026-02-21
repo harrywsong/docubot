@@ -1,70 +1,81 @@
 @echo off
 REM RAG Chatbot Startup Script for Windows
-REM This script starts both the backend API and frontend dev server
+REM This script starts both the backend API server and frontend development server
 
-echo.
-echo Starting RAG Chatbot...
+echo ========================================
+echo RAG Chatbot with Vision - Starting...
+echo ========================================
 echo.
 
-REM Check if Python is available
+REM Check if Python is installed
 python --version >nul 2>&1
 if errorlevel 1 (
-    echo Python is not installed. Please install Python 3.8 or higher.
+    echo ERROR: Python is not installed or not in PATH
+    echo Please install Python 3.10 or higher from https://www.python.org/
     pause
     exit /b 1
 )
 
-REM Check if Node.js is available
+REM Check if Node.js is installed
 node --version >nul 2>&1
 if errorlevel 1 (
-    echo Node.js is not installed. Please install Node.js 18 or higher.
+    echo ERROR: Node.js is not installed or not in PATH
+    echo Please install Node.js from https://nodejs.org/
     pause
     exit /b 1
 )
 
-REM Check if backend dependencies are installed
-if not exist "venv\" (
-    echo Creating virtual environment...
-    python -m venv venv
-    call venv\Scripts\activate.bat
-    pip install -r requirements.txt
-) else (
-    call venv\Scripts\activate.bat
+REM Check if Ollama is running
+echo Checking Ollama status...
+curl -s http://localhost:11434/api/tags >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo WARNING: Ollama is not running!
+    echo Please start Ollama before continuing.
+    echo.
+    echo To start Ollama:
+    echo   1. Open a new terminal
+    echo   2. Run: ollama serve
+    echo.
+    pause
 )
 
-REM Check if frontend dependencies are installed
-if not exist "frontend\node_modules\" (
-    echo Installing frontend dependencies...
-    cd frontend
-    call npm install
-    cd ..
-)
-
+REM Start backend server
 echo.
-echo Dependencies ready
-echo.
+echo Starting backend API server...
+start "RAG Chatbot - Backend" cmd /k "python -m uvicorn backend.api:app --host 0.0.0.0 --port 8000"
 
-REM Start backend
-echo Starting backend API on http://127.0.0.1:8000...
-start "RAG Chatbot Backend" cmd /k "venv\Scripts\activate.bat && python -m uvicorn backend.api:app --host 127.0.0.1 --port 8000"
-
-REM Wait for backend to start
+REM Wait a moment for backend to start
 timeout /t 3 /nobreak >nul
 
-REM Start frontend
-echo Starting frontend on http://localhost:3000...
+REM Start frontend server
+echo Starting frontend development server...
 cd frontend
-start "RAG Chatbot Frontend" cmd /k "npm run dev"
+start "RAG Chatbot - Frontend" cmd /k "npm run dev"
 cd ..
 
 echo.
-echo RAG Chatbot is running!
+echo ========================================
+echo RAG Chatbot is starting!
+echo ========================================
 echo.
-echo Frontend: http://localhost:3000
-echo Backend API: http://127.0.0.1:8000
-echo API Docs: http://127.0.0.1:8000/docs
+echo Backend API: http://localhost:8000
+echo Frontend UI: http://localhost:5173
 echo.
-echo Close the terminal windows to stop the services
+echo Two terminal windows have been opened:
+echo   1. Backend API Server
+echo   2. Frontend Development Server
 echo.
+echo To stop the application, run: stop.bat
+echo Or close both terminal windows manually.
+echo.
+echo Opening browser in 5 seconds...
+timeout /t 5 /nobreak >nul
 
-pause
+REM Open browser
+start http://localhost:5173
+
+echo.
+echo Application is running!
+echo Press any key to close this window (servers will keep running)...
+pause >nul

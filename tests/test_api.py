@@ -147,7 +147,8 @@ class TestFolderEndpoints:
         client.post("/api/folders/add", json={"path": temp_folder})
         
         # Remove folder
-        response = client.delete(
+        response = client.request(
+            "DELETE",
             "/api/folders/remove",
             json={"path": temp_folder}
         )
@@ -157,7 +158,8 @@ class TestFolderEndpoints:
     
     def test_remove_folder_not_found(self, client):
         """Test removing a non-existent folder."""
-        response = client.delete(
+        response = client.request(
+            "DELETE",
             "/api/folders/remove",
             json={"path": "/nonexistent/folder"}
         )

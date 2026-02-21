@@ -21,122 +21,69 @@ A local RAG (Retrieval Augmented Generation) chatbot web application that proces
 - **Embeddings**: sentence-transformers (all-MiniLM-L6-v2)
 - **Vector Store**: ChromaDB for local embedding storage
 
-## Prerequisites
-
-### Required
-
-- **Python 3.8+** with pip
-- **Node.js 18+** with npm
-- **Ollama** for vision model inference
-
-### Hardware
-
-- **Windows**: NVIDIA GPU with CUDA support (tested on GTX 4080)
-- **macOS**: Apple Silicon (M1/M2/M3)
-
 ## Quick Start
 
-### 1. Install Ollama and Vision Model
+> **New User?** See [QUICK_START.md](QUICK_START.md) for the simplest way to get started!
 
-**macOS:**
-```bash
-brew install ollama
-ollama serve
-ollama pull qwen2.5-vl:7b
-```
+### Prerequisites
 
-**Windows:**
-Download from https://ollama.ai and install, then:
-```bash
-ollama serve
-ollama pull qwen2.5-vl:7b
-```
+- **Python 3.10+** with pip
+- **Node.js 18+** with npm
+- **Ollama** with qwen2.5-vl:7b model
 
-### 2. Clone and Setup
+### Installation
 
-```bash
-git clone <repository-url>
-cd rag-chatbot-with-vision
-```
+1. **Install Ollama and the vision model:**
+   ```bash
+   # macOS
+   brew install ollama
+   
+   # Windows: Download from https://ollama.ai
+   
+   # Then pull the model
+   ollama serve
+   ollama pull qwen2.5-vl:7b
+   ```
 
-### 3. Install Backend Dependencies
+2. **Install dependencies:**
+   ```bash
+   # Backend
+   pip install -r requirements.txt
+   
+   # Frontend
+   cd frontend
+   npm install
+   cd ..
+   ```
 
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
+3. **Start the application:**
+   ```bash
+   # Windows
+   start.bat
+   
+   # macOS/Linux
+   ./start.sh
+   ```
 
-### 4. Install Frontend Dependencies
+4. **Open your browser:** http://localhost:5173
 
-```bash
-cd frontend
-npm install
-cd ..
-```
-
-### 5. Start the Application
-
-**Option A: Use startup scripts (recommended)**
-
-Linux/macOS:
-```bash
-chmod +x start.sh
-./start.sh
-```
-
-Windows:
-```bash
-start.bat
-```
-
-**Option B: Start manually**
-
-Terminal 1 (Backend):
-```bash
-source venv/bin/activate
-python -m uvicorn backend.api:app --host 127.0.0.1 --port 8000
-```
-
-Terminal 2 (Frontend):
-```bash
-cd frontend
-npm run dev
-```
-
-### 6. Access the Application
-
-Open your browser and navigate to:
-```
-http://localhost:3000
-```
+5. **Stop the application:**
+   ```bash
+   # Windows
+   stop.bat
+   
+   # macOS/Linux
+   ./stop.sh
+   ```
 
 ## Usage
 
-### 1. Add Folders
+1. **Add folders** containing your documents (PDFs, text files, images)
+2. **Click "Process Documents"** to index your files
+3. **Create a conversation** and start asking questions
+4. **View sources** to see which documents were used for each answer
 
-- Enter a folder path in the "Watched Folders" section
-- Click "Add Folder" to start watching that directory
-- Add multiple folders to index documents from different locations
-
-### 2. Process Documents
-
-- Click "Process Documents" to scan and index all files in watched folders
-- Processing is incremental - only new or modified files are processed
-- View real-time progress updates during processing
-
-### 3. Start Chatting
-
-- Click "+ New Conversation" to create a conversation
-- Type your question in the input field
-- Press Enter or click "Send" to submit
-- View the answer along with source document references
-
-### 4. Manage Conversations
-
-- Select conversations from the sidebar to view history
-- Delete conversations you no longer need
-- All conversations are persisted across application restarts
+For detailed usage instructions, see the in-app help or [QUICK_START.md](QUICK_START.md).
 
 ## Supported File Types
 
@@ -145,25 +92,21 @@ http://localhost:3000
 
 ## API Documentation
 
-The backend API provides comprehensive documentation at:
-```
-http://127.0.0.1:8000/docs
-```
+Full API documentation is available at http://localhost:8000/docs when the backend is running.
 
 ### Key Endpoints
 
-- `POST /api/folders/add` - Add a watched folder
-- `DELETE /api/folders/remove` - Remove a watched folder
-- `GET /api/folders/list` - List all watched folders
-- `POST /api/process/start` - Start document processing
-- `GET /api/process/status` - Get processing status
-- `WS /api/process/stream` - WebSocket for real-time updates
-- `POST /api/conversations/create` - Create new conversation
-- `GET /api/conversations/list` - List all conversations
-- `GET /api/conversations/:id` - Get conversation with messages
-- `DELETE /api/conversations/:id` - Delete conversation
-- `POST /api/query` - Submit a question
-- `GET /api/health` - System health check
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/folders/add` | POST | Add a watched folder |
+| `/api/folders/remove` | DELETE | Remove a watched folder |
+| `/api/folders/list` | GET | List all watched folders |
+| `/api/process/start` | POST | Start document processing |
+| `/api/process/status` | GET | Get processing status |
+| `/api/conversations/create` | POST | Create new conversation |
+| `/api/conversations/list` | GET | List all conversations |
+| `/api/query` | POST | Submit a question |
+| `/api/health` | GET | System health check |
 
 ## Project Structure
 
@@ -198,122 +141,62 @@ rag-chatbot-with-vision/
 │   ├── chromadb/         # Vector embeddings
 │   └── rag_chatbot.db    # SQLite database
 ├── requirements.txt       # Python dependencies
-├── start.sh              # Linux/macOS startup script
+├── start.sh              # macOS/Linux startup script
 ├── start.bat             # Windows startup script
+├── stop.sh               # macOS/Linux shutdown script
+├── stop.bat              # Windows shutdown script
 └── README.md             # This file
 ```
 
 ## Development
 
 ### Running Tests
-
 ```bash
-# Activate virtual environment
-source venv/bin/activate
-
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=backend tests/
-
-# Run specific test file
-pytest tests/test_api.py
+pytest                          # Run all tests
+pytest --cov=backend tests/     # Run with coverage
+pytest tests/test_api.py        # Run specific test file
 ```
 
-### Backend Development
-
-The backend uses FastAPI with automatic reload:
+### Development Mode
 ```bash
-python -m uvicorn backend.api:app --reload --host 127.0.0.1 --port 8000
-```
+# Backend with auto-reload
+python -m uvicorn backend.api:app --reload --host 0.0.0.0 --port 8000
 
-### Frontend Development
-
-The frontend uses Vite with hot module replacement:
-```bash
+# Frontend with hot reload
 cd frontend
 npm run dev
 ```
 
 ## Troubleshooting
 
-### Ollama Not Running
+### Common Issues
 
-**Error**: "Ollama is not running"
+| Issue | Solution |
+|-------|----------|
+| "Ollama is not running" | Run `ollama serve` in a terminal |
+| "Model not found" | Run `ollama pull qwen2.5-vl:7b` |
+| Port already in use | Run the stop script first |
+| Browser doesn't open | Manually go to http://localhost:5173 |
 
-**Solution**:
-```bash
-ollama serve
-```
-
-### Model Not Found
-
-**Error**: "Qwen2.5-VL 7B model not found"
-
-**Solution**:
-```bash
-ollama pull qwen2.5-vl:7b
-```
-
-### Port Already in Use
-
-**Backend (8000)**:
-```bash
-# Find and kill process using port 8000
-lsof -ti:8000 | xargs kill -9  # macOS/Linux
-netstat -ano | findstr :8000   # Windows
-```
-
-**Frontend (3000)**: Vite will automatically use the next available port
-
-### Database Locked
-
-If you see "database is locked" errors, ensure only one backend instance is running.
-
-### WebSocket Connection Failed
-
-Check that:
-1. Backend is running on port 8000
-2. No firewall is blocking WebSocket connections
-3. Browser console for specific error messages
+For more troubleshooting help, see [QUICK_START.md](QUICK_START.md).
 
 ## Performance
 
-- **Image Processing**: <5s on GTX 4080, <10s on Apple Silicon
-- **Query Response**: <5s on GTX 4080, <10s on Apple Silicon
-- **Folder Scanning**: <1s per 100 files
-- **Embedding Generation**: <2s per 100 chunks
+- Image Processing: <5s on GTX 4080, <10s on Apple Silicon
+- Query Response: <5s on GTX 4080, <10s on Apple Silicon
 
 ## Privacy & Security
 
-- All data processing happens locally on your machine
-- No internet connectivity required (except for initial Ollama model download)
-- No authentication or user accounts
-- All sensitive information remains on your local storage
-- Documents and conversations are stored in the `data/` directory
-
-## License
-
-[Add your license here]
-
-## Contributing
-
-[Add contribution guidelines here]
-
-## Support
-
-For issues and questions:
-- Check the troubleshooting section above
-- Review API documentation at http://127.0.0.1:8000/docs
-- Check backend logs for detailed error messages
-- Verify Ollama is running and model is installed
+- All processing happens locally on your machine
+- No internet connectivity required (except initial model download)
+- All data stored in local `data/` directory
+- No authentication or user accounts needed
 
 ## Acknowledgments
 
-- **Ollama**: Local LLM inference platform
-- **Qwen2.5-VL**: Vision-language model by Alibaba Cloud
-- **ChromaDB**: Vector database for embeddings
-- **FastAPI**: Modern Python web framework
-- **React**: Frontend UI library
-- **Vite**: Fast frontend build tool
+- [Ollama](https://ollama.ai) - Local LLM inference
+- [Qwen2.5-VL](https://github.com/QwenLM/Qwen2-VL) - Vision-language model
+- [ChromaDB](https://www.trychroma.com/) - Vector database
+- [FastAPI](https://fastapi.tiangolo.com/) - Python web framework
+- [React](https://react.dev/) - Frontend framework
+- [Vite](https://vitejs.dev/) - Build tool
