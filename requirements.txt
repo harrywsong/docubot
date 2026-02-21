@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+chromadb
+sentence-transformers
+ollama
+pillow
+pypdf
+hypothesis
+pytest
