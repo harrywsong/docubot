@@ -25,6 +25,12 @@ if ! command -v node &> /dev/null; then
     exit 1
 fi
 
+# Activate virtual environment if it exists
+if [ -d "venv" ]; then
+    echo "Activating virtual environment..."
+    source venv/bin/activate
+fi
+
 # Check if Ollama is running
 echo "Checking Ollama status..."
 if ! curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
