@@ -194,7 +194,8 @@ Instructions:
     def generate_general_response(
         self,
         question: str,
-        retrieved_chunks: List[str],
+        retrieved_results: List = None,
+        retrieved_chunks: List[str] = None,
         conversation_history: List[Dict[str, str]] = None
     ) -> str:
         """
@@ -202,7 +203,8 @@ Instructions:
         
         Args:
             question: User's question
-            retrieved_chunks: List of relevant text chunks from documents
+            retrieved_results: List of QueryResult objects with metadata (preferred)
+            retrieved_chunks: List of relevant text chunks (fallback for backward compatibility)
             conversation_history: Previous conversation messages
             
         Returns:
@@ -213,16 +215,15 @@ Instructions:
         # Detect language from question
         is_korean = self._detect_korean(question)
         
-        # Build context from chunks - make sure payment info is visible
+        # Build context from results (with filenames) or chunks (fallback)
         context_parts = []
-        for i, chunk in enumerate(retrieved_chunks):
-            # Highlight payment-related fields if present
-            highlighted_chunk = chunk
-            if 'Payment Method:' in chunk or 'payment_method' in chunk.lower():
-                highlighted_chunk = f"[PAYMENT INFO FOUND]\n{chunk}"
-            if 'Card Last 4 Digits:' in chunk or 'card_last_4_digits' in chunk.lower():
-                highlighted_chunk = f"[CARD INFO FOUND]\n{chunk}"
-            context_parts.append(f"=== Document {i+1} ===\n{highlighted_chunk}")
+        if retrieved_results:
+            for i, result in enumerate(retrieved_results):
+                filename = result.metadata.get('filename', f'Document {i+1}')
+                context_parts.append(f"=== {filename} ===\n{result.content}")
+        elif retrieved_chunks:
+            for i, chunk in enumerate(retrieved_chunks):
+                context_parts.append(f"=== Document {i+1} ===\n{chunk}")
         
         context = "\n\n".join(context_parts)
         
@@ -236,51 +237,55 @@ Instructions:
                 conv_parts.append(f"{role}: {msg['content'][:150]}")
             conv_context = "\n".join(conv_parts)
         
-        # Build prompt with CRITICAL instructions
+        # Build prompt with clear instructions
         if is_korean:
             prompt = f"""당신은 한국어로 대화하는 문서 분석 어시스턴트입니다.
 
-=== 절대 규칙 (CRITICAL RULES) ===
-1. 반드시 한국어로만 답변하세요 - 중국어나 영어를 절대 섞지 마세요
-2. 문서에서 "Payment Method:" 또는 "payment_method" 필드를 찾으세요
-3. 문서에서 "Card Last 4 Digits:" 또는 "card_last_4_digits" 필드를 찾으세요
-4. 카드 종류/카드는 어떤거 = Payment Method 정보를 답변
-5. 카드 번호/뒷자리 = Card Last 4 Digits 정보를 답변
-6. [PAYMENT INFO FOUND] 또는 [CARD INFO FOUND] 표시가 있으면 그 문서를 주의깊게 읽으세요
+중요한 규칙:
+- 반드시 한국어로만 답변하세요
+- 아래 {len(context_parts)}개의 모든 문서를 확인하세요
+- "총", "전체", "모두" 같은 단어가 있으면 관련된 모든 문서를 찾아서 합산하세요
+- 실제 파일명을 사용하세요 (예: IMG_4025.jpeg)
+- 문서에 없는 정보는 추측하지 마세요
+
+합산 예시:
+질문: "코스트코에서 총 얼마 썼어?"
+답변: "코스트코에서 총 $411.89를 사용했습니다 (IMG_4025.jpeg: $222.18, KakaoTalk_xxx.jpg: $189.71)"
 
 """
             if conv_context:
-                prompt += f"=== 이전 대화 ===\n{conv_context}\n\n"
+                prompt += f"이전 대화:\n{conv_context}\n\n"
             
-            prompt += f"""=== 관련 문서 ===
+            prompt += f"""관련 문서 ({len(context_parts)}개):
 {context}
 
-=== 사용자 질문 ===
-{question}
+질문: {question}
 
-=== 답변 (한국어로만, 문서의 정확한 정보 사용) ==="""
+답변:"""
         else:
             prompt = f"""You are a helpful document analysis assistant.
 
-=== CRITICAL RULES ===
-1. Answer ONLY in English - DO NOT mix Chinese or Korean
-2. Look for "Payment Method:" or "payment_method" field in documents
-3. Look for "Card Last 4 Digits:" or "card_last_4_digits" field in documents
-4. If asked about card type = report Payment Method information
-5. If asked about card number = report Card Last 4 Digits information
-6. If you see [PAYMENT INFO FOUND] or [CARD INFO FOUND], read that document carefully
+Important rules:
+- Answer ONLY in English
+- Check ALL {len(context_parts)} documents provided below
+- If the question asks for "total", "all", or "sum", find ALL related documents and aggregate
+- Use actual filenames (e.g., IMG_4025.jpeg), not "Document 1"
+- Don't make assumptions about information not in the documents
+
+Aggregation example:
+Question: "How much did I spend at Costco in total?"
+Answer: "You spent $411.89 total at Costco (IMG_4025.jpeg: $222.18, KakaoTalk_xxx.jpg: $189.71)"
 
 """
             if conv_context:
-                prompt += f"=== Previous Conversation ===\n{conv_context}\n\n"
+                prompt += f"Previous conversation:\n{conv_context}\n\n"
             
-            prompt += f"""=== Relevant Documents ===
+            prompt += f"""Relevant documents ({len(context_parts)} documents):
 {context}
 
-=== User Question ===
-{question}
+Question: {question}
 
-=== Response (English only, use exact information from documents) ==="""
+Answer:"""
         
         # Generate response with timeout (10 seconds for Pi mode)
         try:

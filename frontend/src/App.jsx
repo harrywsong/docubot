@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { MessageSquare, FolderOpen, Settings, Zap } from 'lucide-react';
+import { MessageSquare, FolderOpen, Settings } from 'lucide-react';
 import ChatInterface from './components/ChatInterface';
 import ConversationList from './components/ConversationList';
 import FolderManagement from './components/FolderManagement';
@@ -7,6 +7,12 @@ import ProcessingPanel from './components/ProcessingPanel';
 import HealthCheck from './components/HealthCheck';
 import Toast from './components/Toast';
 import './index.css';
+
+// Import logo - you can replace this with your actual logo file
+// Place your logo image in frontend/src/assets/ folder
+// Supported formats: .png, .jpg, .svg, .webp
+// Example: import logo from './assets/logo.png';
+import logo from './assets/logo.png';
 
 function App() {
   const [activeView, setActiveView] = useState('chat');
@@ -54,8 +60,12 @@ function App() {
           {/* Logo/Header */}
           <div className="p-6 border-b border-white/[0.06]">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-indigo-600 flex items-center justify-center shadow-accent-glow">
-                <Zap className="w-5 h-5 text-white" />
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-indigo-600 flex items-center justify-center shadow-accent-glow overflow-hidden">
+                <img 
+                  src={logo} 
+                  alt="DocuBot Logo" 
+                  className="w-full h-full object-cover"
+                />
               </div>
               <div>
                 <h1 className="text-xl font-semibold gradient-text">DocuBot</h1>

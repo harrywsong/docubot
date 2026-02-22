@@ -232,12 +232,14 @@ class ConversationManager:
                 "SELECT title FROM conversations WHERE id = ?",
                 (conversation_id,)
             )
-            current_title = cursor.fetchone()['title']
+            row = cursor.fetchone()
+            current_title = row['title'] if row else None
             
             # Generate title from first user message if no title exists
             new_title = current_title
-            if not current_title and role == 'user':
+            if (current_title is None or current_title == '') and role == 'user':
                 new_title = self._generate_title(content)
+                logger.info(f"Generated title for conversation {conversation_id}: {new_title}")
             
             conn.execute(
                 """

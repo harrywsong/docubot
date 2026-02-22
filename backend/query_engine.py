@@ -205,7 +205,7 @@ class QueryEngine:
             
             return {
                 "answer": answer,
-                "sources": self._format_sources(results, min_similarity_score=0.5),
+                "sources": self._format_sources(results, top_k=3),
                 "aggregated_amount": None,
                 "breakdown": None,
                 "retrieval_time": retrieval_time
@@ -504,14 +504,11 @@ class QueryEngine:
         Returns:
             Generated response text
         """
-        # Extract text chunks from results
-        chunks = [result.content for result in results]
-        
-        # Use LLM to generate natural response
+        # Pass full results (with metadata) to LLM
         try:
             return self.llm_generator.generate_general_response(
                 question=question,
-                retrieved_chunks=chunks,
+                retrieved_results=results,
                 conversation_history=conversation_history
             )
         except Exception as e:
@@ -654,30 +651,27 @@ class QueryEngine:
         
         return "I couldn't find specific information to answer that question in the documents."
     
-    def _format_sources(self, results: List[QueryResult], min_similarity_score: float = 0.5) -> List[Dict[str, Any]]:
+    def _format_sources(self, results: List[QueryResult], top_k: int = 3) -> List[Dict[str, Any]]:
             """
             Format query results as source references.
             
-            Dynamically includes all metadata fields without hardcoding specific field names.
+            Returns the top K most relevant results without threshold filtering.
 
             Args:
-                results: List of query results
-                min_similarity_score: Minimum similarity score threshold for filtering (default: 0.5)
+                results: List of query results (already sorted by similarity)
+                top_k: Number of top results to return (default: 3)
 
             Returns:
-                List of source dictionaries with similarity scores >= min_similarity_score
+                List of top K source dictionaries
             """
-            # Filter results by similarity score threshold
-            filtered_results = [r for r in results if r.similarity_score >= min_similarity_score]
+            # Take only the top K results (no threshold filtering)
+            top_results = results[:top_k]
 
-            # Log filtering for debugging
-            filtered_count = len(results) - len(filtered_results)
-            if filtered_count > 0:
-                logger.info(f"Filtered out {filtered_count} sources with similarity score < {min_similarity_score}")
+            logger.info(f"Returning top {len(top_results)} sources (requested: {top_k})")
 
             sources = []
 
-            for result in filtered_results:
+            for result in top_results:
                 source = {
                     'filename': result.metadata.get('filename', 'Unknown'),
                     'chunk': result.content[:200] + "..." if len(result.content) > 200 else result.content,

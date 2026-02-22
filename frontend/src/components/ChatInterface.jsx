@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, Folder, ChevronDown, ChevronUp } from 'lucide-react';
+import { Send, Folder, ChevronDown, ChevronUp, User } from 'lucide-react';
 import { getConversation, submitQuery, openFolder } from '../api';
+import logo from '../assets/logo.png';
 
 export default function ChatInterface({ conversationId, onToast }) {
   const [messages, setMessages] = useState([]);
@@ -124,7 +125,18 @@ export default function ChatInterface({ conversationId, onToast }) {
               >
                 {/* Message */}
                 <div className={`flex gap-4 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-3xl ${message.role === 'user' ? 'order-2' : 'order-1'}`}>
+                  {/* Avatar - Assistant */}
+                  {message.role === 'assistant' && (
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent to-indigo-600 flex items-center justify-center shadow-accent-glow flex-shrink-0 overflow-hidden">
+                      <img 
+                        src={logo} 
+                        alt="Bot" 
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  )}
+                  
+                  <div className={`max-w-3xl flex-1`}>
                     {/* Role Badge */}
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-xs font-mono uppercase tracking-widest text-foreground-muted">
@@ -208,6 +220,13 @@ export default function ChatInterface({ conversationId, onToast }) {
                       </div>
                     )}
                   </div>
+                  
+                  {/* Avatar - User */}
+                  {message.role === 'user' && (
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-gray-600 to-gray-700 flex items-center justify-center flex-shrink-0">
+                      <User className="w-5 h-5 text-white" />
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
