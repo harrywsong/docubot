@@ -46,6 +46,13 @@ export async function listFolders() {
   return fetchAPI('/folders/list');
 }
 
+export async function listFolderFiles(path) {
+  return fetchAPI('/folders/files', {
+    method: 'POST',
+    body: JSON.stringify({ path }),
+  });
+}
+
 // ============================================================================
 // Document Processing
 // ============================================================================

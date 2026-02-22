@@ -1,25 +1,33 @@
-# RAG Chatbot with Vision Processing
+# DocuBot - Multilingual RAG Chatbot with Vision Processing
 
-A local RAG (Retrieval Augmented Generation) chatbot web application that processes both text documents and images to answer user questions. The system runs entirely on your local machine with no internet connectivity required.
+A privacy-focused RAG (Retrieval Augmented Generation) chatbot that processes documents and images to answer questions in multiple languages. Designed for local deployment with excellent Korean-English cross-lingual support.
 
 ## Features
 
-- 📁 **Folder-Based Document Management**: Specify folders containing your documents
-- 📄 **Text Document Processing**: Extract and index content from PDF and TXT files
-- 🖼️ **Image Processing with Vision**: Extract information from receipts and invoices using Qwen2.5-VL 7B
-- 💬 **ChatGPT-Style Interface**: Modern web interface with conversation management
-- 🔍 **Smart Retrieval**: Find relevant information across all your documents
-- 📊 **Source Attribution**: See which documents were used to answer each question
+- 🌏 **Multilingual Support**: Native Korean and English support with cross-lingual semantic search
+- 📁 **Smart Document Management**: Folder-based organization with incremental processing
+- 🖼️ **Vision Processing**: Extract structured data from receipts, invoices, and documents using qwen3-vl:8b
+- 💬 **Modern Chat Interface**: ChatGPT-style conversation management
+- 🔍 **Semantic Search**: Find relevant information across documents regardless of language
+- 📊 **Source Attribution**: See which documents were used for each answer
 - 🔒 **Privacy-First**: All data stays local, no cloud services required
-- ⚡ **Incremental Processing**: Only processes new or modified files
+- ⚡ **Optimized Performance**: Fast embedding generation and query processing
 
 ## Architecture
 
+### Core Stack
 - **Backend**: Python with FastAPI, ChromaDB, SQLite
 - **Frontend**: React with Vite
-- **Vision Model**: Qwen2.5-VL 7B via Ollama
-- **Embeddings**: sentence-transformers (all-MiniLM-L6-v2)
-- **Vector Store**: ChromaDB for local embedding storage
+- **Embedding Model**: qwen3-embedding:8b (4096-dim, multilingual)
+- **Conversational Model**: qwen2.5:7b (better reading comprehension)
+- **Vision Model**: qwen3-vl:8b (document extraction)
+- **Vector Store**: ChromaDB for persistent embeddings
+
+### Key Design Decisions
+- **Multilingual Embeddings**: qwen3-embedding:8b supports Korean, English, Chinese, and 100+ languages
+- **Flexible Metadata**: No hardcoded fields - vision model dynamically extracts document-specific data
+- **Split Architecture**: Separate models for embedding, conversation, and vision processing
+- **Raspberry Pi Ready**: Optimized for deployment on Pi 5 (8GB RAM)
 
 ## Quick Start
 
@@ -30,22 +38,24 @@ A local RAG (Retrieval Augmented Generation) chatbot web application that proces
 - **Python 3.10+** with pip
 - **Node.js 18+** with npm
 - **Ollama** with required models:
-  - `qwen2.5vl:7b` - Vision model for image processing
-  - `qwen2.5:7b` - Text model for response generation
+  - `qwen3-embedding:8b` - Multilingual embedding model (4096-dim)
+  - `qwen2.5:7b` - Conversational model for response generation
+  - `qwen3-vl:8b` - Vision model for image/document processing
 
 ### Installation
 
-1. **Install Ollama and the required models:**
+1. **Install Ollama and pull the required models:**
    ```bash
    # macOS
    brew install ollama
    
    # Windows: Download from https://ollama.ai
    
-   # Then pull the models
+   # Start Ollama and pull models
    ollama serve
-   ollama pull qwen2.5vl:7b
+   ollama pull qwen3-embedding:8b
    ollama pull qwen2.5:7b
+   ollama pull qwen3-vl:8b
    ```
 
 2. **Install dependencies:**
@@ -91,7 +101,16 @@ For detailed usage instructions, see the in-app help or [QUICK_START.md](QUICK_S
 ## Supported File Types
 
 - **Text Documents**: PDF, TXT
-- **Images**: PNG, JPG, JPEG (receipts, invoices)
+- **Images**: PNG, JPG, JPEG, GIF, BMP, TIFF, WEBP
+- **Document Types**: Receipts, invoices, ID cards, legal documents, forms
+
+## Multilingual Support
+
+The system is optimized for Korean-English bilingual use:
+- **Query in Korean**: "2월에 코스트코에서 얼마나 썼어?"
+- **Query in English**: "How much did I spend at Costco in February?"
+- **Documents in any language**: Automatically extracts and indexes content
+- **Cross-lingual search**: Korean queries can find English documents and vice versa
 
 ## API Documentation
 
@@ -114,41 +133,45 @@ Full API documentation is available at http://localhost:8000/docs when the backe
 ## Project Structure
 
 ```
-rag-chatbot-with-vision/
-├── backend/                 # Python backend
-│   ├── api.py              # FastAPI application
-│   ├── config.py           # Configuration
-│   ├── database.py         # SQLite database manager
-│   ├── models.py           # Data models
-│   ├── folder_manager.py   # Folder management
-│   ├── text_processor.py   # Text extraction and chunking
-│   ├── image_processor.py  # Image processing with vision model
-│   ├── ollama_client.py    # Ollama API client
-│   ├── embedding_engine.py # Embedding generation
-│   ├── vector_store.py     # ChromaDB wrapper
-│   ├── processing_state.py # Processing state tracking
-│   ├── document_processor.py # Document processing orchestrator
+docubot/
+├── backend/                    # Python backend
+│   ├── api.py                 # FastAPI application
+│   ├── config.py              # Configuration management
+│   ├── database.py            # SQLite database manager
+│   ├── models.py              # Data models
+│   ├── folder_manager.py      # Folder management
+│   ├── text_processor.py      # Text extraction and chunking
+│   ├── image_processor.py     # Vision-based document extraction
+│   ├── ollama_client.py       # Ollama API client
+│   ├── embedding_engine.py    # Multilingual embedding generation
+│   ├── vector_store.py        # ChromaDB wrapper
+│   ├── document_processor.py  # Document processing orchestrator
 │   ├── conversation_manager.py # Conversation management
-│   └── query_engine.py     # Query processing and RAG
-├── frontend/               # React frontend
+│   ├── llm_generator.py       # LLM response generation
+│   └── query_engine.py        # RAG query processing
+├── frontend/                   # React frontend
 │   ├── src/
-│   │   ├── components/    # React components
-│   │   ├── api.js        # API client
-│   │   ├── App.jsx       # Main app component
-│   │   └── main.jsx      # Entry point
+│   │   ├── components/        # React components
+│   │   ├── api.js            # API client
+│   │   ├── App.jsx           # Main app component
+│   │   └── main.jsx          # Entry point
 │   ├── index.html
 │   ├── vite.config.js
 │   └── package.json
-├── tests/                 # Test suite
-├── data/                  # Local data storage
-│   ├── chromadb/         # Vector embeddings
-│   └── rag_chatbot.db    # SQLite database
-├── requirements.txt       # Python dependencies
-├── start.sh              # macOS/Linux startup script
-├── start.bat             # Windows startup script
-├── stop.sh               # macOS/Linux shutdown script
-├── stop.bat              # Windows shutdown script
-└── README.md             # This file
+├── scripts/                    # Utility scripts
+│   ├── test_*.py              # Testing scripts
+│   ├── check_*.py             # Diagnostic scripts
+│   └── migrate_*.py           # Migration scripts
+├── tests/                      # Test suite
+├── docs/                       # Documentation
+│   ├── DEPLOYMENT.md          # Deployment guide
+│   ├── PERFORMANCE_ANALYSIS.md # Performance metrics
+│   └── SPLIT_ARCHITECTURE.md  # Architecture details
+├── data/                       # Local data storage
+│   ├── chromadb/              # Vector embeddings
+│   └── app.db                 # SQLite database
+├── requirements.txt            # Python dependencies
+└── README.md                   # This file
 ```
 
 ## Development
@@ -185,8 +208,21 @@ For more troubleshooting help, see [QUICK_START.md](QUICK_START.md).
 
 ## Performance
 
-- Image Processing: <5s on GTX 4080, <10s on Apple Silicon
-- Query Response: <5s on GTX 4080, <10s on Apple Silicon
+### Desktop (NVIDIA RTX 4080)
+- Vision Processing: 2-5s per image
+- Embedding Generation: <1s per document
+- Query Response: 3-8s
+
+### Raspberry Pi 5 (8GB RAM)
+- Vision Processing: Not recommended (use desktop for processing)
+- Embedding Generation: 2-3s per document
+- Query Response: 15-25s with qwen2.5:7b
+
+### Optimization Tips
+- Use desktop for initial document processing
+- Export processed data to Pi for querying
+- qwen2.5:7b provides good balance of speed and quality on Pi
+- Consider qwen2.5:3b for faster responses (lower quality)
 
 ## Privacy & Security
 
@@ -198,8 +234,12 @@ For more troubleshooting help, see [QUICK_START.md](QUICK_START.md).
 ## Acknowledgments
 
 - [Ollama](https://ollama.ai) - Local LLM inference
-- [Qwen2.5-VL](https://github.com/QwenLM/Qwen2-VL) - Vision-language model
+- [Qwen](https://github.com/QwenLM) - Qwen2.5 and Qwen3 model families
 - [ChromaDB](https://www.trychroma.com/) - Vector database
 - [FastAPI](https://fastapi.tiangolo.com/) - Python web framework
 - [React](https://react.dev/) - Frontend framework
 - [Vite](https://vitejs.dev/) - Build tool
+
+## License
+
+MIT License - See LICENSE file for details

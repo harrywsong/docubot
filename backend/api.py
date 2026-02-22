@@ -54,7 +54,9 @@ processing_status = {
     "processed": 0,
     "skipped": 0,
     "failed": 0,
-    "failed_files": []
+    "failed_files": [],
+    "processed_files": [],
+    "skipped_files": []
 }
 
 
@@ -276,6 +278,16 @@ class FolderListResponse(BaseModel):
     folders: List[Dict[str, Any]]
 
 
+class ListFolderFilesRequest(BaseModel):
+    """Request model for listing files in a folder."""
+    path: str = Field(..., description="Path to folder")
+
+
+class ListFolderFilesResponse(BaseModel):
+    """Response model for listing files in a folder."""
+    files: List[str]
+
+
 # ============================================================================
 # Folder Management Endpoints
 # ============================================================================
@@ -361,6 +373,43 @@ async def list_folders():
         raise HTTPException(status_code=500, detail=f"Failed to list folders: {str(e)}")
 
 
+@app.post("/api/folders/files", response_model=ListFolderFilesResponse)
+async def list_folder_files(request: ListFolderFilesRequest):
+    """
+    List all files in a specific folder.
+    
+    Returns list of filenames (not full paths) in the folder.
+    """
+    try:
+        import os
+        from pathlib import Path
+        
+        folder_path = Path(request.path)
+        
+        if not folder_path.exists():
+            raise HTTPException(status_code=404, detail="Folder not found")
+        
+        if not folder_path.is_dir():
+            raise HTTPException(status_code=400, detail="Path is not a directory")
+        
+        # Get all files (not directories) in the folder
+        files = []
+        for item in folder_path.iterdir():
+            if item.is_file():
+                files.append(item.name)
+        
+        # Sort files alphabetically
+        files.sort()
+        
+        return ListFolderFilesResponse(files=files)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to list folder files: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list folder files: {str(e)}")
+
+
 # ============================================================================
 # Document Processing Endpoints
 # ============================================================================
@@ -402,7 +451,9 @@ async def start_processing():
             "processed": 0,
             "skipped": 0,
             "failed": 0,
-            "failed_files": []
+            "failed_files": [],
+            "processed_files": [],
+            "skipped_files": []
         }
         
         # Start processing in background
@@ -488,7 +539,9 @@ async def process_stream(websocket: WebSocket):
                     "failed_files": [
                         {"file": file_path, "error": error}
                         for file_path, error in processing_status["failed_files"]
-                    ]
+                    ],
+                    "processed_files": processing_status["processed_files"],
+                    "skipped_files": processing_status["skipped_files"]
                 })
                 break
     
@@ -524,6 +577,8 @@ async def run_document_processing():
         processing_status["skipped"] = result.skipped
         processing_status["failed"] = result.failed
         processing_status["failed_files"] = result.failed_files
+        processing_status["processed_files"] = result.processed_files
+        processing_status["skipped_files"] = result.skipped_files
         processing_status["is_processing"] = False
         
         logger.info(

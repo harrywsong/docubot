@@ -44,6 +44,15 @@ class ProcessingResult:
     skipped: int
     failed: int
     failed_files: List[Tuple[str, str]]  # List of (file_path, error_message)
+    processed_files: List[str] = None  # List of processed file paths
+    skipped_files: List[str] = None  # List of skipped file paths
+    
+    def __post_init__(self):
+        """Initialize empty lists if None."""
+        if self.processed_files is None:
+            self.processed_files = []
+        if self.skipped_files is None:
+            self.skipped_files = []
 
 
 def _get_file_hash(file_path: str) -> str:
@@ -140,6 +149,8 @@ class DocumentProcessor:
         skipped_count = 0
         failed_count = 0
         failed_files = []
+        processed_files = []
+        skipped_files = []
         
         # Get all watched folders
         folders = self.folder_manager.list_folders()
@@ -150,7 +161,9 @@ class DocumentProcessor:
                 processed=0,
                 skipped=0,
                 failed=0,
-                failed_files=[]
+                failed_files=[],
+                processed_files=[],
+                skipped_files=[]
             )
         
         logger.info(f"Processing {len(folders)} watched folders")
@@ -170,8 +183,10 @@ class DocumentProcessor:
                 result = self._process_text_file(file_path, folder.id)
                 if result == "processed":
                     processed_count += 1
+                    processed_files.append(file_path)
                 elif result == "skipped":
                     skipped_count += 1
+                    skipped_files.append(file_path)
                 elif isinstance(result, str) and result.startswith("failed:"):
                     failed_count += 1
                     error_msg = result[7:]  # Remove "failed:" prefix
@@ -181,8 +196,10 @@ class DocumentProcessor:
                 result = self._process_image_file(file_path, folder.id)
                 if result == "processed":
                     processed_count += 1
+                    processed_files.append(file_path)
                 elif result == "skipped":
                     skipped_count += 1
+                    skipped_files.append(file_path)
                 elif isinstance(result, str) and result.startswith("failed:"):
                     failed_count += 1
                     error_msg = result[7:]  # Remove "failed:" prefix
@@ -197,7 +214,9 @@ class DocumentProcessor:
             processed=processed_count,
             skipped=skipped_count,
             failed=failed_count,
-            failed_files=failed_files
+            failed_files=failed_files,
+            processed_files=processed_files,
+            skipped_files=skipped_files
         )
     
     def _process_text_file(self, file_path: str, folder_id: int) -> str:

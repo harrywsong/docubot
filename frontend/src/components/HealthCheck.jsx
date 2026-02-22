@@ -1,77 +1,46 @@
-import { useState, useEffect } from 'react';
-import { checkHealth } from '../api';
+import { CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 
-export default function HealthCheck() {
-  const [health, setHealth] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    performHealthCheck();
-  }, []);
-
-  async function performHealthCheck() {
-    setLoading(true);
-    try {
-      const response = await checkHealth();
-      setHealth(response);
-    } catch (error) {
-      setHealth({
-        status: 'error',
-        errors: [`Failed to check health: ${error.message}`]
-      });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (loading) {
+export default function HealthCheck({ status }) {
+  if (!status) {
     return (
-      <div className="health-status" style={{ background: '#f8f9fa' }}>
-        Checking system health...
+      <div className="flex items-center gap-2 text-foreground-muted text-sm">
+        <div className="w-2 h-2 rounded-full bg-foreground-muted animate-pulse" />
+        <span>Checking status...</span>
       </div>
     );
   }
 
-  if (!health || health.status === 'error') {
-    return (
-      <div className="health-status unhealthy">
-        <strong>⚠️ System Error</strong>
-        {health?.errors && health.errors.length > 0 && (
-          <ul>
-            {health.errors.map((error, idx) => (
-              <li key={idx}>{error}</li>
-            ))}
-          </ul>
-        )}
-      </div>
-    );
-  }
+  const isHealthy = status.status === 'healthy';
+  const Icon = isHealthy ? CheckCircle2 : status.status === 'degraded' ? AlertCircle : XCircle;
+  const color = isHealthy ? 'text-green-400' : status.status === 'degraded' ? 'text-yellow-400' : 'text-red-400';
 
-  if (health.status === 'unhealthy') {
-    return (
-      <div className="health-status unhealthy">
-        <strong>⚠️ System Not Ready</strong>
-        {health.errors && health.errors.length > 0 && (
-          <ul>
-            {health.errors.map((error, idx) => (
-              <li key={idx}>{error}</li>
-            ))}
-          </ul>
-        )}
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <Icon className={`w-4 h-4 ${color}`} />
+        <span className="text-sm font-medium text-foreground">
+          {isHealthy ? 'System Healthy' : status.status === 'degraded' ? 'Degraded' : 'Unhealthy'}
+        </span>
       </div>
-    );
-  }
-
-  if (health.status === 'healthy') {
-    return (
-      <div className="health-status healthy">
-        <strong>✓ System Ready</strong>
-        <p style={{ marginTop: '4px', fontSize: '13px' }}>
-          All systems operational
-        </p>
-      </div>
-    );
-  }
-
-  return null;
+      
+      {status.details && (
+        <div className="text-xs text-foreground-muted space-y-1">
+          {status.details.ollama_status && (
+            <div className="flex items-center justify-between">
+              <span>Ollama:</span>
+              <span className={status.details.ollama_status === 'available' ? 'text-green-400' : 'text-red-400'}>
+                {status.details.ollama_status}
+              </span>
+            </div>
+          )}
+          {status.details.vector_store_documents !== undefined && (
+            <div className="flex items-center justify-between">
+              <span>Documents:</span>
+              <span className="text-foreground">{status.details.vector_store_documents}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
