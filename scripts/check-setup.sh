@@ -1,5 +1,9 @@
 #!/bin/bash
 # Setup verification script for macOS/Linux
+# Run from project root: ./scripts/check-setup.sh
+
+# Change to project root directory
+cd "$(dirname "$0")/.."
 
 echo "========================================"
 echo "RAG Chatbot - Setup Verification"
@@ -65,10 +69,10 @@ echo ""
 echo "========================================"
 if [ $ERRORS -eq 0 ]; then
     echo "Setup verification PASSED!"
-    echo "You can now run: ./start.sh"
+    echo "You can now run: ./scripts/start.sh"
 else
     echo "Setup verification FAILED!"
-    echo "Please fix the errors above before running ./start.sh"
+    echo "Please fix the errors above before running ./scripts/start.sh"
 fi
 echo "========================================"
 echo ""

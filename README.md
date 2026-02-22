@@ -29,20 +29,23 @@ A local RAG (Retrieval Augmented Generation) chatbot web application that proces
 
 - **Python 3.10+** with pip
 - **Node.js 18+** with npm
-- **Ollama** with qwen2.5-vl:7b model
+- **Ollama** with required models:
+  - `qwen2.5vl:7b` - Vision model for image processing
+  - `qwen2.5:7b` - Text model for response generation
 
 ### Installation
 
-1. **Install Ollama and the vision model:**
+1. **Install Ollama and the required models:**
    ```bash
    # macOS
    brew install ollama
    
    # Windows: Download from https://ollama.ai
    
-   # Then pull the model
+   # Then pull the models
    ollama serve
-   ollama pull qwen2.5-vl:7b
+   ollama pull qwen2.5vl:7b
+   ollama pull qwen2.5:7b
    ```
 
 2. **Install dependencies:**
@@ -59,10 +62,10 @@ A local RAG (Retrieval Augmented Generation) chatbot web application that proces
 3. **Start the application:**
    ```bash
    # Windows
-   start.bat
+   scripts\start.bat
    
    # macOS/Linux
-   ./start.sh
+   ./scripts/start.sh
    ```
 
 4. **Open your browser:** http://localhost:5173
@@ -70,10 +73,10 @@ A local RAG (Retrieval Augmented Generation) chatbot web application that proces
 5. **Stop the application:**
    ```bash
    # Windows
-   stop.bat
+   scripts\stop.bat
    
    # macOS/Linux
-   ./stop.sh
+   ./scripts/stop.sh
    ```
 
 ## Usage
@@ -174,7 +177,7 @@ npm run dev
 | Issue | Solution |
 |-------|----------|
 | "Ollama is not running" | Run `ollama serve` in a terminal |
-| "Model not found" | Run `ollama pull qwen2.5-vl:7b` |
+| "Model not found" | Run `ollama pull qwen2.5vl:7b` |
 | Port already in use | Run the stop script first |
 | Browser doesn't open | Manually go to http://localhost:5173 |
 

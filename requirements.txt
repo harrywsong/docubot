@@ -6,8 +6,10 @@ sentence-transformers
 ollama
 pillow
 pypdf
+pdf2image
 chardet
 hypothesis
 pytest
 httpx>=0.27.0
 starlette>=0.37.0
+python-dotenv

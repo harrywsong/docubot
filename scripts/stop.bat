@@ -13,9 +13,9 @@ for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8000 ^| findstr LISTENING') 
     taskkill /F /PID %%a >nul 2>&1
 )
 
-REM Kill frontend server (Node/Vite on port 5173)
+REM Kill frontend server (Node/Vite on port 3000)
 echo Stopping frontend development server...
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr :5173 ^| findstr LISTENING') do (
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :3000 ^| findstr LISTENING') do (
     taskkill /F /PID %%a >nul 2>&1
 )
 

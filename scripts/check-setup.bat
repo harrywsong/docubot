@@ -1,5 +1,9 @@
 @echo off
 REM Setup verification script for Windows
+REM Run from project root: scripts\check-setup.bat
+
+REM Change to project root directory
+cd /d "%~dp0.."
 
 echo ========================================
 echo RAG Chatbot - Setup Verification
@@ -69,10 +73,10 @@ echo.
 echo ========================================
 if %ERRORS%==0 (
     echo Setup verification PASSED!
-    echo You can now run: start.bat
+    echo You can now run: scripts\start.bat
 ) else (
     echo Setup verification FAILED!
-    echo Please fix the errors above before running start.bat
+    echo Please fix the errors above before running scripts\start.bat
 )
 echo ========================================
 echo.

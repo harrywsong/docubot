@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { startProcessing, connectProcessingStream } from '../api';
+import { startProcessing, connectProcessingStream, clearAllData } from '../api';
 
 export default function ProcessingPanel({ onToast }) {
   const [processing, setProcessing] = useState(false);
@@ -71,6 +71,20 @@ export default function ProcessingPanel({ onToast }) {
     }
   }
 
+  async function handleClearData() {
+    if (!confirm('Are you sure you want to clear all data? This will delete all processed documents and reset the database.')) {
+      return;
+    }
+    
+    try {
+      const result = await clearAllData();
+      setStatus({ processed: 0, skipped: 0, failed: 0, failed_files: [] });
+      onToast(result.message, 'success');
+    } catch (error) {
+      onToast(`Failed to clear data: ${error.message}`, 'error');
+    }
+  }
+
   return (
     <div className="processing-section">
       <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px' }}>
@@ -90,6 +104,19 @@ export default function ProcessingPanel({ onToast }) {
         ) : (
           'Process Documents'
         )}
+      </button>
+
+      <button
+        className="process-btn"
+        onClick={handleClearData}
+        disabled={processing}
+        style={{ 
+          marginTop: '8px',
+          backgroundColor: '#dc3545',
+          borderColor: '#dc3545'
+        }}
+      >
+        Clear All Data
       </button>
 
       {(processing || status.processed > 0 || status.skipped > 0 || status.failed > 0) && (

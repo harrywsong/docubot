@@ -100,13 +100,14 @@ class DocumentChunk:
 
 @dataclass
 class ImageExtraction:
-    """Represents extracted data from an image (receipt/invoice)."""
-    merchant: Optional[str]
-    date: Optional[str]
-    total_amount: Optional[float]
-    currency: Optional[str]
-    line_items: List[dict]
-    raw_text: str
+    """
+    Represents extracted data from an image with flexible metadata.
+    
+    The vision model dynamically determines what fields to extract based on document type.
+    All extracted fields are stored in flexible_metadata.
+    """
+    raw_text: str = ""
+    flexible_metadata: dict = field(default_factory=dict)
     
     def validate(self) -> bool:
         """
@@ -117,20 +118,7 @@ class ImageExtraction:
         """
         if not isinstance(self.raw_text, str):
             return False
-        if not isinstance(self.line_items, list):
-            return False
-        # Validate line items structure
-        for item in self.line_items:
-            if not isinstance(item, dict):
-                return False
-        # Validate optional fields types
-        if self.merchant is not None and not isinstance(self.merchant, str):
-            return False
-        if self.date is not None and not isinstance(self.date, str):
-            return False
-        if self.total_amount is not None and not isinstance(self.total_amount, (int, float)):
-            return False
-        if self.currency is not None and not isinstance(self.currency, str):
+        if not isinstance(self.flexible_metadata, dict):
             return False
         return True
     
@@ -138,27 +126,30 @@ class ImageExtraction:
         """
         Format extracted data as structured text for embedding.
         
+        Uses flexible_metadata fields (model-determined fields for any document type).
+        With qwen3-embedding's huge context (40960 tokens), we can include much more detail.
+        
         Returns:
             Formatted text representation
         """
         lines = []
-        if self.merchant:
-            lines.append(f"Merchant: {self.merchant}")
-        if self.date:
-            lines.append(f"Date: {self.date}")
-        if self.total_amount is not None:
-            currency_str = self.currency or "USD"
-            lines.append(f"Total: {currency_str} {self.total_amount:.2f}")
         
-        if self.line_items:
-            lines.append("\nLine Items:")
-            for item in self.line_items:
-                item_name = item.get('name', 'Unknown')
-                item_price = item.get('price', 0.0)
-                lines.append(f"  - {item_name}: {item_price:.2f}")
+        # Use flexible metadata (all extracted fields from any document type)
+        if self.flexible_metadata:
+            for key, value in self.flexible_metadata.items():
+                # Format field name nicely (snake_case to Title Case)
+                field_name = key.replace('_', ' ').title()
+                # Allow longer values with qwen3-embedding's large context
+                value_str = str(value)
+                if len(value_str) > 2000:
+                    value_str = value_str[:2000] + "..."
+                lines.append(f"{field_name}: {value_str}")
         
+        # Add raw text for additional context (with generous limit for qwen3-embedding)
         if self.raw_text:
-            lines.append(f"\nRaw Text:\n{self.raw_text}")
+            # Limit raw text to 8000 chars - plenty of context with large embedding model
+            raw_preview = self.raw_text[:8000] + "..." if len(self.raw_text) > 8000 else self.raw_text
+            lines.append(f"\nRaw Text:\n{raw_preview}")
         
         return "\n".join(lines)
 
@@ -264,4 +255,193 @@ class Conversation:
         for msg in self.messages:
             if not isinstance(msg, Message) or not msg.validate():
                 return False
+        return True
+
+
+@dataclass
+class ProcessingReport:
+    """Report of document processing validation."""
+    total_documents: int
+    total_chunks: int
+    total_embeddings: int
+    failed_documents: List[tuple]  # List of (file_path, error) tuples
+    missing_embeddings: List[str]  # List of chunk_ids
+    incomplete_metadata: List[str]  # List of chunk_ids
+    validation_passed: bool
+
+
+@dataclass
+class ExportResult:
+    """Result of an export operation."""
+    success: bool
+    package_path: str
+    archive_path: str
+    size_bytes: int
+    statistics: dict
+    errors: List[str]
+    
+    def validate(self) -> bool:
+        """
+        Validate export result data.
+        
+        Returns:
+            True if valid, False otherwise
+        """
+        if not isinstance(self.success, bool):
+            return False
+        if not self.package_path or not isinstance(self.package_path, str):
+            return False
+        if not self.archive_path or not isinstance(self.archive_path, str):
+            return False
+        if not isinstance(self.size_bytes, int) or self.size_bytes < 0:
+            return False
+        if not isinstance(self.statistics, dict):
+            return False
+        if not isinstance(self.errors, list):
+            return False
+        for error in self.errors:
+            if not isinstance(error, str):
+                return False
+        return True
+
+
+@dataclass
+class HealthStatus:
+    """System health status for Pi server."""
+    status: str  # "healthy", "warning", "critical"
+    memory_usage_percent: float
+    memory_available_mb: float
+    model_loaded: bool
+    vector_store_loaded: bool
+    total_chunks: int
+    last_query_time: Optional[float]
+    
+    def validate(self) -> bool:
+        """
+        Validate health status data.
+        
+        Returns:
+            True if valid, False otherwise
+        """
+        if self.status not in ('healthy', 'warning', 'critical'):
+            return False
+        if not isinstance(self.memory_usage_percent, (int, float)):
+            return False
+        if not (0.0 <= self.memory_usage_percent <= 100.0):
+            return False
+        if not isinstance(self.memory_available_mb, (int, float)):
+            return False
+        if self.memory_available_mb < 0:
+            return False
+        if not isinstance(self.model_loaded, bool):
+            return False
+        if not isinstance(self.vector_store_loaded, bool):
+            return False
+        if not isinstance(self.total_chunks, int) or self.total_chunks < 0:
+            return False
+        if self.last_query_time is not None:
+            if not isinstance(self.last_query_time, (int, float)):
+                return False
+            if self.last_query_time < 0:
+                return False
+        return True
+
+
+@dataclass
+class MergeResult:
+    """Result of an incremental merge operation."""
+    success: bool
+    merged_chunks: int
+    updated_chunks: int
+    deleted_chunks: int
+    errors: List[str]
+    merge_time_seconds: float
+    
+    def validate(self) -> bool:
+        """
+        Validate merge result data.
+        
+        Returns:
+            True if valid, False otherwise
+        """
+        if not isinstance(self.success, bool):
+            return False
+        if not isinstance(self.merged_chunks, int) or self.merged_chunks < 0:
+            return False
+        if not isinstance(self.updated_chunks, int) or self.updated_chunks < 0:
+            return False
+        if not isinstance(self.deleted_chunks, int) or self.deleted_chunks < 0:
+            return False
+        if not isinstance(self.errors, list):
+            return False
+        for error in self.errors:
+            if not isinstance(error, str):
+                return False
+        if not isinstance(self.merge_time_seconds, (int, float)):
+            return False
+        if self.merge_time_seconds < 0:
+            return False
+        return True
+
+
+@dataclass
+class ManifestValidation:
+    """Result of manifest validation."""
+    valid: bool
+    embedding_dimension_match: bool
+    model_compatible: bool
+    errors: List[str]
+    warnings: List[str]
+    
+    def validate(self) -> bool:
+        """
+        Validate manifest validation data.
+        
+        Returns:
+            True if valid, False otherwise
+        """
+        if not isinstance(self.valid, bool):
+            return False
+        if not isinstance(self.embedding_dimension_match, bool):
+            return False
+        if not isinstance(self.model_compatible, bool):
+            return False
+        if not isinstance(self.errors, list):
+            return False
+        for error in self.errors:
+            if not isinstance(error, str):
+                return False
+        if not isinstance(self.warnings, list):
+            return False
+        for warning in self.warnings:
+            if not isinstance(warning, str):
+                return False
+        return True
+
+
+@dataclass
+class MemoryStats:
+    """Memory usage statistics."""
+    used_mb: float
+    available_mb: float
+    total_mb: float
+    percent: float
+    
+    def validate(self) -> bool:
+        """
+        Validate memory stats data.
+        
+        Returns:
+            True if valid, False otherwise
+        """
+        if not isinstance(self.used_mb, (int, float)) or self.used_mb < 0:
+            return False
+        if not isinstance(self.available_mb, (int, float)) or self.available_mb < 0:
+            return False
+        if not isinstance(self.total_mb, (int, float)) or self.total_mb < 0:
+            return False
+        if not isinstance(self.percent, (int, float)):
+            return False
+        if not (0.0 <= self.percent <= 100.0):
+            return False
         return True

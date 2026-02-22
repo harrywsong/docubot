@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 import tempfile
 import os
 
-from backend.image_processor import ImageProcessor, process_image, RECEIPT_EXTRACTION_PROMPT
+from backend.image_processor import ImageProcessor, process_image, DOCUMENT_EXTRACTION_PROMPT
 from backend.ollama_client import OllamaClient, OllamaError
 from backend.models import ImageExtraction
 
@@ -52,7 +52,7 @@ class TestImageProcessor:
         # Verify client was called correctly
         mock_client.generate.assert_called_once()
         call_args = mock_client.generate.call_args
-        assert call_args[1]["prompt"] == RECEIPT_EXTRACTION_PROMPT
+        assert call_args[1]["prompt"] == DOCUMENT_EXTRACTION_PROMPT
         assert call_args[1]["images"] == ["base64_image_data"]
         assert call_args[1]["stream"] is False
     
@@ -149,10 +149,10 @@ Line Items:
     def test_parse_response_date_variations(self):
         """Test parsing date with different formats."""
         test_cases = [
-            ("Date: February 11, 2026", "February 11, 2026"),
-            ("DATE: 2026-02-11", "2026-02-11"),
-            ("Date: Feb 11, 2026", "Feb 11, 2026"),
-            ("date: 02/11/2026", "02/11/2026"),
+            ("Date: February 11, 2026", "February 11, 2026"),  # Text dates not normalized
+            ("DATE: 2026-02-11", "2026-02-11"),  # Already ISO format
+            ("Date: Feb 11, 2026", "Feb 11, 2026"),  # Text dates not normalized
+            ("date: 02/11/2026", "2026-02-11"),  # MM/DD/YYYY normalized to YYYY-MM-DD
         ]
         
         processor = ImageProcessor()

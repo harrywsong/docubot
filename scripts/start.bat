@@ -1,6 +1,10 @@
 @echo off
 REM RAG Chatbot Startup Script for Windows
 REM This script starts both the backend API server and frontend development server
+REM Run from project root: scripts\start.bat
+
+REM Change to project root directory
+cd /d "%~dp0.."
 
 echo ========================================
 echo RAG Chatbot with Vision - Starting...
@@ -53,7 +57,7 @@ if not exist "frontend\node_modules\" (
 REM Start backend server
 echo.
 echo Starting backend API server...
-start "RAG Chatbot - Backend" cmd /k "python -m uvicorn backend.api:app --host 0.0.0.0 --port 8000"
+start "RAG Chatbot - Backend" cmd /k "cd /d "%~dp0.." && python -m uvicorn backend.api:app --host 0.0.0.0 --port 8000"
 
 REM Wait a moment for backend to start
 timeout /t 3 /nobreak >nul
@@ -76,7 +80,7 @@ echo Two terminal windows have been opened:
 echo   1. Backend API Server
 echo   2. Frontend Development Server
 echo.
-echo To stop the application, run: stop.bat
+echo To stop the application, run: scripts\stop.bat
 echo Or close both terminal windows manually.
 echo.
 echo Opening browser in 5 seconds...

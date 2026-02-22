@@ -33,7 +33,8 @@ def query_result_strategy(draw):
     
     file_type = 'image' if file_ext in ['.jpg', '.png', '.jpeg'] else 'text'
     folder_path = draw(st.text(min_size=1, max_size=200, alphabet=st.characters(whitelist_categories=('Lu', 'Ll', 'Nd', 'P'))))
-    similarity_score = draw(st.floats(min_value=0.0, max_value=1.0))
+    # Generate similarity scores >= 0.5 to ensure they pass the filtering threshold
+    similarity_score = draw(st.floats(min_value=0.5, max_value=1.0))
     
     metadata = {
         'filename': filename,
@@ -209,6 +210,7 @@ class TestPropertySourceAttribution:
         Test that source metadata includes all relevant fields from the original results.
         
         This extends Property 23 to verify metadata completeness.
+        Note: Only results with similarity_score >= 0.5 are included in sources.
         """
         # Arrange: Create query engine with mocked dependencies
         with patch('backend.query_engine.get_embedding_engine') as mock_emb:
@@ -224,10 +226,16 @@ class TestPropertySourceAttribution:
                 # Act: Execute query
                 response = engine.query(question)
                 
+                # Filter results to only those with similarity_score >= 0.5 (matching the engine's behavior)
+                filtered_results = [r for r in results if r.similarity_score >= 0.5]
+                
                 # Assert: Verify metadata completeness
+                assert len(response['sources']) == len(filtered_results), \
+                    f"Number of sources must match filtered results (score >= 0.5)"
+                
                 for i, source in enumerate(response['sources']):
                     metadata = source['metadata']
-                    original_metadata = results[i].metadata
+                    original_metadata = filtered_results[i].metadata
                     
                     # Check that file_type is included
                     assert 'file_type' in metadata, f"Source {i} metadata must include 'file_type'"

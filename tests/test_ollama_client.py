@@ -18,8 +18,8 @@ class TestOllamaClient:
         """Test client initialization with default config."""
         client = OllamaClient()
         assert client.endpoint == "http://localhost:11434"
-        assert client.model == "qwen2.5-vl:7b"
-        assert client.timeout in [5, 10]  # Depends on platform
+        assert client.model == "qwen2.5vl:7b"
+        assert client.timeout == 30  # Default timeout for all platforms
     
     def test_init_custom_config(self):
         """Test client initialization with custom config."""
@@ -40,7 +40,7 @@ class TestOllamaClient:
         mock_machine.return_value = "arm64"
         
         client = OllamaClient()
-        assert client.timeout == 10
+        assert client.timeout == 30
     
     @patch('platform.system')
     @patch('platform.machine')
@@ -50,7 +50,7 @@ class TestOllamaClient:
         mock_machine.return_value = "x86_64"
         
         client = OllamaClient()
-        assert client.timeout == 5
+        assert client.timeout == 30
     
     @patch('requests.get')
     def test_health_check_success(self, mock_get):
@@ -78,7 +78,7 @@ class TestOllamaClient:
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "models": [
-                {"name": "qwen2.5-vl:7b"},
+                {"name": "qwen2.5vl:7b"},
                 {"name": "other-model"}
             ]
         }

@@ -130,3 +130,24 @@ export async function submitQuery(conversationId, question) {
 export async function checkHealth() {
   return fetchAPI('/health');
 }
+
+// ============================================================================
+// Admin
+// ============================================================================
+
+export async function clearAllData() {
+  return fetchAPI('/admin/clear-all-data', {
+    method: 'POST',
+  });
+}
+
+// ============================================================================
+// Files
+// ============================================================================
+
+export async function openFolder(path) {
+  return fetchAPI('/files/open-folder', {
+    method: 'POST',
+    body: JSON.stringify({ path }),
+  });
+}

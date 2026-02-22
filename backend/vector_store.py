@@ -24,20 +24,22 @@ class VectorStore:
     
     Features:
     - Persistent storage in data/chromadb/
-    - Metadata filtering for date and merchant queries
+    - Metadata filtering for date and other document attributes
     - Similarity search with top-k retrieval
     - Support for both text and image document chunks
     """
     
-    def __init__(self, persist_directory: str = "data/chromadb"):
+    def __init__(self, persist_directory: str = "data/chromadb", read_only: bool = False):
         """
         Initialize the vector store.
         
         Args:
             persist_directory: Directory for persistent ChromaDB storage
+            read_only: If True, prevent write operations (for Pi deployment)
         """
         self.persist_directory = persist_directory
         self.collection_name = "documents"
+        self.read_only = read_only
         
         # Create directory if it doesn't exist
         Path(persist_directory).mkdir(parents=True, exist_ok=True)
@@ -61,6 +63,8 @@ class VectorStore:
         
         logger.info(f"Vector store initialized with collection: {self.collection_name}")
         logger.info(f"Current document count: {self.collection.count()}")
+        if self.read_only:
+            logger.info("Vector store initialized in READ-ONLY mode")
     
     def initialize(self) -> None:
         """
@@ -75,7 +79,13 @@ class VectorStore:
         
         Args:
             chunks: List of DocumentChunk objects with embeddings
+            
+        Raises:
+            RuntimeError: If vector store is in read-only mode
         """
+        if self.read_only:
+            raise RuntimeError("Cannot add chunks: Vector store is in read-only mode")
+        
         if not chunks:
             logger.warning("No chunks provided to add_chunks")
             return
@@ -162,7 +172,7 @@ class VectorStore:
         Args:
             query_embedding: Embedding vector for the query
             top_k: Number of results to return (default: 5)
-            metadata_filter: Optional metadata filters (e.g., {"merchant": "Costco", "date": "2026-02-11"})
+            metadata_filter: Optional metadata filters (e.g., {"document_type": "invoice", "date": "2026-02-11"})
             
         Returns:
             List of QueryResult objects with content, metadata, and similarity scores
@@ -219,6 +229,9 @@ class VectorStore:
         """
         Build ChromaDB where clause from metadata filter.
         
+        Uses exact match for all fields. The query engine should
+        extract relevant field names and values from the question.
+        
         Args:
             metadata_filter: Dictionary of metadata filters
             
@@ -232,6 +245,7 @@ class VectorStore:
         
         for key, value in metadata_filter.items():
             if value is not None:
+                # Use exact match for all fields
                 conditions.append({key: {"$eq": value}})
         
         if len(conditions) == 0:
@@ -250,7 +264,13 @@ class VectorStore:
             
         Returns:
             Number of chunks deleted
+            
+        Raises:
+            RuntimeError: If vector store is in read-only mode
         """
+        if self.read_only:
+            raise RuntimeError("Cannot delete chunks: Vector store is in read-only mode")
+        
         logger.info(f"Deleting chunks for folder: {folder_path}")
         
         # Query for all chunks with this folder_path
@@ -286,7 +306,13 @@ class VectorStore:
             
         Returns:
             Number of chunks deleted
+            
+        Raises:
+            RuntimeError: If vector store is in read-only mode
         """
+        if self.read_only:
+            raise RuntimeError("Cannot delete chunks: Vector store is in read-only mode")
+        
         logger.info(f"Deleting chunks for file: {file_path}")
         
         # Query for all chunks with this file_path
@@ -335,11 +361,120 @@ class VectorStore:
             "persist_directory": self.persist_directory
         }
     
+    def get_embedding_dimension(self) -> Optional[int]:
+        """
+        Get the embedding dimension from stored data.
+        
+        Returns:
+            Embedding dimension if data exists, None if vector store is empty
+        """
+        if self.collection.count() == 0:
+            logger.warning("Vector store is empty, cannot determine embedding dimension")
+            return None
+        
+        # Get one chunk to determine embedding dimension
+        try:
+            results = self.collection.get(
+                limit=1,
+                include=["embeddings"]
+            )
+            
+            # Check if we have results
+            if not results:
+                logger.warning("No results returned from vector store")
+                return None
+            
+            # Check if embeddings key exists and has data
+            if 'embeddings' not in results:
+                logger.warning("No embeddings key in results")
+                return None
+            
+            embeddings = results['embeddings']
+            # embeddings might be a numpy array, so check length directly
+            if len(embeddings) == 0:
+                logger.warning("Embeddings list is empty")
+                return None
+            
+            embedding = embeddings[0]
+            if embedding is None:
+                logger.warning("First embedding is None")
+                return None
+            
+            dimension = len(embedding)
+            logger.info(f"Detected embedding dimension: {dimension}")
+            return dimension
+                
+        except Exception as e:
+            logger.error(f"Error getting embedding dimension: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
+    
+    def merge_chunks(self, new_chunks: List[DocumentChunk], strategy: str = "append") -> int:
+        """
+        Merge new chunks with existing data for incremental updates.
+        
+        Args:
+            new_chunks: List of new DocumentChunk objects to merge
+            strategy: Merge strategy - "append" (add new chunks) or "replace" (replace existing)
+            
+        Returns:
+            Number of chunks merged
+            
+        Raises:
+            RuntimeError: If vector store is in read-only mode
+            ValueError: If strategy is not supported
+        """
+        if self.read_only:
+            raise RuntimeError("Cannot merge chunks: Vector store is in read-only mode")
+        
+        if strategy not in ["append", "replace"]:
+            raise ValueError(f"Unsupported merge strategy: {strategy}. Use 'append' or 'replace'")
+        
+        if not new_chunks:
+            logger.warning("No chunks provided to merge_chunks")
+            return 0
+        
+        logger.info(f"Merging {len(new_chunks)} chunks with strategy: {strategy}")
+        
+        if strategy == "append":
+            # Simply add new chunks
+            self.add_chunks(new_chunks)
+            return len(new_chunks)
+        
+        elif strategy == "replace":
+            # For replace strategy, delete existing chunks for the same files first
+            files_to_replace = set()
+            for chunk in new_chunks:
+                filename = chunk.metadata.get('filename')
+                folder_path = chunk.metadata.get('folder_path')
+                if filename and folder_path:
+                    file_path = os.path.join(folder_path, filename)
+                    files_to_replace.add(file_path)
+            
+            # Delete existing chunks for these files
+            total_deleted = 0
+            for file_path in files_to_replace:
+                deleted = self.delete_by_file(file_path)
+                total_deleted += deleted
+            
+            logger.info(f"Deleted {total_deleted} existing chunks before merge")
+            
+            # Add new chunks
+            self.add_chunks(new_chunks)
+            return len(new_chunks)
+    
     def reset(self) -> None:
         """
         Reset the vector store by deleting all data.
         WARNING: This operation cannot be undone.
+        
+        Raises:
+            RuntimeError: If vector store is in read-only mode
         """
+        if self.read_only:
+            raise RuntimeError("Cannot reset: Vector store is in read-only mode")
+        
         logger.warning("Resetting vector store - all data will be deleted")
         self.client.delete_collection(name=self.collection_name)
         self.collection = self.client.create_collection(

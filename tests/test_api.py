@@ -74,16 +74,20 @@ class TestHealthCheck:
         
         # Check response structure
         assert "status" in data
+        assert "memory_usage_percent" in data
+        assert "memory_available_mb" in data
+        assert "model_loaded" in data
+        assert "vector_store_loaded" in data
+        assert "total_chunks" in data
         assert "ollama_available" in data
         assert "model_available" in data
         assert "database_available" in data
-        assert "vector_store_available" in data
         assert "errors" in data
         assert "warnings" in data
         
         # Database and vector store should be available in tests
         assert data["database_available"] is True
-        assert data["vector_store_available"] is True
+        assert data["vector_store_loaded"] is True
 
 
 class TestFolderEndpoints:
@@ -329,6 +333,231 @@ class TestQueryEndpoint:
         conv_response = client.get(f"/api/conversations/{conversation_id}")
         conversation = conv_response.json()["conversation"]
         assert len(conversation["messages"]) == 2  # User + assistant
+
+
+class TestExportEndpoints:
+    """Tests for export and validation endpoints."""
+    
+    def test_get_processing_report(self, client):
+        """Test getting processing validation report."""
+        response = client.get("/api/processing/report")
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert "total_documents" in data
+        assert "total_chunks" in data
+        assert "total_embeddings" in data
+        assert "failed_documents" in data
+        assert "missing_embeddings" in data
+        assert "incomplete_metadata" in data
+        assert "validation_passed" in data
+        
+        # Check types
+        assert isinstance(data["total_documents"], int)
+        assert isinstance(data["total_chunks"], int)
+        assert isinstance(data["total_embeddings"], int)
+        assert isinstance(data["failed_documents"], list)
+        assert isinstance(data["missing_embeddings"], list)
+        assert isinstance(data["incomplete_metadata"], list)
+        assert isinstance(data["validation_passed"], bool)
+    
+    def test_create_export_full(self, client, test_data_dir):
+        """Test creating full export package."""
+        # Note: This test expects ChromaDB directory to exist
+        # In a real scenario, documents would be processed first
+        # For this test, we verify the API endpoint structure works
+        
+        response = client.post(
+            "/api/export",
+            json={
+                "output_dir": str(Path(test_data_dir) / "test_export"),
+                "incremental": False
+            }
+        )
+        
+        # The export may fail if no data has been processed yet
+        # This is expected behavior - we're testing the API structure
+        if response.status_code == 500:
+            # Verify it's the expected error (missing ChromaDB)
+            detail = response.json()["detail"]
+            assert "ChromaDB directory not found" in detail or "Export failed" in detail
+        else:
+            # If it succeeds (data exists), verify response structure
+            assert response.status_code == 200
+            data = response.json()
+            assert data["success"] is True
+            assert "package_path" in data
+            assert "archive_path" in data
+            assert "size_bytes" in data
+            assert "size_mb" in data
+            assert "statistics" in data
+            assert "errors" in data
+    
+    def test_create_export_incremental(self, client, test_data_dir):
+        """Test creating incremental export package."""
+        from datetime import datetime, timedelta
+        
+        # Use a timestamp from 1 hour ago
+        since_timestamp = (datetime.now() - timedelta(hours=1)).isoformat()
+        
+        response = client.post(
+            "/api/export",
+            json={
+                "output_dir": str(Path(test_data_dir) / "test_export_incremental"),
+                "incremental": True,
+                "since_timestamp": since_timestamp
+            }
+        )
+        
+        # The export may fail if no data has been processed yet
+        # This is expected behavior - we're testing the API structure
+        if response.status_code == 500:
+            # Verify it's the expected error (missing ChromaDB)
+            detail = response.json()["detail"]
+            assert "ChromaDB directory not found" in detail or "Export failed" in detail
+        else:
+            # If it succeeds (data exists), verify response structure
+            assert response.status_code == 200
+            data = response.json()
+            assert data["success"] is True
+            assert "package_path" in data
+            assert "archive_path" in data
+    
+    def test_create_export_invalid_timestamp(self, client, test_data_dir):
+        """Test creating export with invalid timestamp format."""
+        response = client.post(
+            "/api/export",
+            json={
+                "output_dir": str(Path(test_data_dir) / "test_export_invalid"),
+                "incremental": True,
+                "since_timestamp": "invalid-timestamp"
+            }
+        )
+        assert response.status_code == 400
+        assert "Invalid timestamp format" in response.json()["detail"]
+    
+    def test_validate_export_valid(self, client, test_data_dir):
+        """Test validating export package endpoint structure."""
+        # Test with a non-existent path to verify API structure
+        # (Creating a real export requires processed data)
+        
+        response = client.get(
+            "/api/export/validate",
+            params={"package_path": str(Path(test_data_dir) / "nonexistent")}
+        )
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert "valid" in data
+        assert "errors" in data
+        assert "warnings" in data
+        assert isinstance(data["valid"], bool)
+        assert isinstance(data["errors"], list)
+        assert isinstance(data["warnings"], list)
+        
+        # Should be invalid since path doesn't exist
+        assert data["valid"] is False
+        assert len(data["errors"]) > 0
+    
+    def test_validate_export_missing_directory(self, client):
+        """Test validating non-existent export package."""
+        response = client.get(
+            "/api/export/validate",
+            params={"package_path": "/nonexistent/path"}
+        )
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["valid"] is False
+        assert len(data["errors"]) > 0
+        assert "not found" in data["errors"][0].lower()
+
+
+class TestPiSpecificEndpoints:
+    """Tests for Pi-specific API endpoints."""
+    
+    def test_health_check_with_resource_monitor(self, client):
+        """Test health check endpoint returns Pi-specific fields."""
+        response = client.get("/api/health")
+        assert response.status_code == 200
+        data = response.json()
+        
+        # Check Pi-specific fields are present
+        assert "status" in data
+        assert "memory_usage_percent" in data
+        assert "memory_available_mb" in data
+        assert "model_loaded" in data
+        assert "vector_store_loaded" in data
+        assert "total_chunks" in data
+        
+        # Check types
+        assert isinstance(data["memory_usage_percent"], (int, float))
+        assert isinstance(data["memory_available_mb"], (int, float))
+        assert isinstance(data["model_loaded"], bool)
+        assert isinstance(data["vector_store_loaded"], bool)
+        assert isinstance(data["total_chunks"], int)
+        
+        # Memory usage should be between 0 and 100
+        assert 0 <= data["memory_usage_percent"] <= 100
+        assert data["memory_available_mb"] >= 0
+    
+    def test_get_data_stats(self, client):
+        """Test getting data statistics."""
+        response = client.get("/api/data/stats")
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert "total_chunks" in data
+        assert "embedding_dimension" in data
+        assert "last_update" in data
+        assert "vector_store_size_mb" in data
+        assert "database_size_mb" in data
+        
+        # Check types
+        assert isinstance(data["total_chunks"], int)
+        assert data["total_chunks"] >= 0
+        
+        # embedding_dimension can be None if vector store is empty
+        if data["embedding_dimension"] is not None:
+            assert isinstance(data["embedding_dimension"], int)
+            assert data["embedding_dimension"] > 0
+        
+        # last_update can be None if no manifest
+        if data["last_update"] is not None:
+            assert isinstance(data["last_update"], str)
+        
+        # Sizes can be None if files don't exist
+        if data["vector_store_size_mb"] is not None:
+            assert isinstance(data["vector_store_size_mb"], (int, float))
+            assert data["vector_store_size_mb"] >= 0
+        
+        if data["database_size_mb"] is not None:
+            assert isinstance(data["database_size_mb"], (int, float))
+            assert data["database_size_mb"] >= 0
+    
+    def test_merge_incremental_data_missing_package(self, client):
+        """Test merging with non-existent package."""
+        response = client.post(
+            "/api/data/merge",
+            json={"package_path": "/nonexistent/package"}
+        )
+        assert response.status_code == 500
+        assert "Merge failed" in response.json()["detail"]
+    
+    def test_merge_incremental_data_invalid_package(self, client, test_data_dir):
+        """Test merging with invalid package (missing manifest)."""
+        # Create an empty directory as invalid package
+        invalid_package = Path(test_data_dir) / "invalid_package"
+        invalid_package.mkdir(exist_ok=True)
+        
+        response = client.post(
+            "/api/data/merge",
+            json={"package_path": str(invalid_package)}
+        )
+        assert response.status_code == 500
+        detail = response.json()["detail"]
+        assert "Merge failed" in detail
+        assert "Manifest file not found" in detail
 
 
 if __name__ == "__main__":

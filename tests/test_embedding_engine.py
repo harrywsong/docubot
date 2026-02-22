@@ -13,17 +13,17 @@ class TestEmbeddingEngine:
         """Test that embedding engine initializes correctly."""
         engine = EmbeddingEngine()
         
-        assert engine.model_name == "all-MiniLM-L6-v2"
+        assert engine.model_name == "paraphrase-multilingual-MiniLM-L12-v2"
         assert engine.batch_size == 32
         assert engine.device in ['cuda', 'mps', 'cpu']
         assert engine.model is not None
     
     def test_embedding_dimension(self):
-        """Test that embedding dimension is correct for all-MiniLM-L6-v2."""
+        """Test that embedding dimension is correct for paraphrase-multilingual-MiniLM-L12-v2."""
         engine = EmbeddingEngine()
         
         dim = engine.get_embedding_dimension()
-        assert dim == 384  # all-MiniLM-L6-v2 produces 384-dimensional embeddings
+        assert dim == 384  # paraphrase-multilingual-MiniLM-L12-v2 produces 384-dimensional embeddings
     
     def test_generate_single_embedding(self):
         """Test generating embedding for a single text."""
@@ -104,7 +104,7 @@ class TestEmbeddingEngine:
         assert "batch_size" in info
         assert "embedding_dimension" in info
         assert info["device"] in ['cuda', 'mps', 'cpu']
-        assert info["model_name"] == "all-MiniLM-L6-v2"
+        assert info["model_name"] == "paraphrase-multilingual-MiniLM-L12-v2"
         assert info["batch_size"] == 32
         assert info["embedding_dimension"] == 384
     

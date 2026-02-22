@@ -1,6 +1,10 @@
 #!/bin/bash
 # RAG Chatbot Startup Script for macOS/Linux
 # This script starts both the backend API server and frontend development server
+# Run from project root: ./scripts/start.sh
+
+# Change to project root directory
+cd "$(dirname "$0")/.."
 
 echo "========================================"
 echo "RAG Chatbot with Vision - Starting..."
@@ -79,7 +83,7 @@ echo "Logs are being written to:"
 echo "  - backend.log"
 echo "  - frontend.log"
 echo ""
-echo "To stop the application, run: ./stop.sh"
+echo "To stop the application, run: ./scripts/stop.sh"
 echo ""
 echo "Opening browser in 5 seconds..."
 sleep 5

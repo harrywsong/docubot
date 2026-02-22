@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { getConversation, submitQuery } from '../api';
+import { getConversation, submitQuery, openFolder } from '../api';
 
 export default function ChatInterface({ conversationId, onToast }) {
   const [messages, setMessages] = useState([]);
@@ -105,13 +105,39 @@ export default function ChatInterface({ conversationId, onToast }) {
                   {message.sources.map((source, idx) => (
                     <div key={idx} className="source-item">
                       <div className="source-filename">
-                        {source.metadata?.filename || 'Unknown file'}
+                        {source.filename || source.metadata?.filename || 'Unknown file'}
+                        {source.metadata?.folder_path && (
+                          <button
+                            className="open-folder-btn"
+                            onClick={async () => {
+                              try {
+                                await openFolder(source.metadata.folder_path);
+                                onToast('Opened folder location', 'success');
+                              } catch (error) {
+                                onToast(`Failed to open folder: ${error.message}`, 'error');
+                              }
+                            }}
+                            title="Open folder location"
+                            style={{
+                              marginLeft: '8px',
+                              padding: '2px 8px',
+                              fontSize: '11px',
+                              backgroundColor: '#4a5568',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '3px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            📁 Open Folder
+                          </button>
+                        )}
                       </div>
                       <div className="source-content">
-                        {source.content?.substring(0, 100)}...
+                        {source.chunk?.substring(0, 100) || source.content?.substring(0, 100)}...
                       </div>
                       <div className="source-score">
-                        Relevance: {(source.score * 100).toFixed(1)}%
+                        Relevance: {((source.score || 0) * 100).toFixed(1)}%
                       </div>
                     </div>
                   ))}

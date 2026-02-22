@@ -31,7 +31,7 @@ class TestQueryEngine:
         """Create query engine with mocked dependencies."""
         with patch('backend.query_engine.get_embedding_engine', return_value=mock_embedding_engine):
             with patch('backend.query_engine.get_vector_store', return_value=mock_vector_store):
-                engine = QueryEngine()
+                engine = QueryEngine(retrieval_timeout=2.0, similarity_threshold=0.3)
                 return engine
     
     def test_query_generates_embedding(self, query_engine, mock_embedding_engine, mock_vector_store):
@@ -83,7 +83,7 @@ class TestQueryEngine:
         date = query_engine._extract_date(question)
         
         # Assert
-        assert date == "2026-02-11"
+        assert date == ("2026-02-11", False)
     
     def test_extract_date_mmm_dd_yyyy_format(self, query_engine):
         """Test date extraction for MMM DD, YYYY format."""
@@ -94,7 +94,7 @@ class TestQueryEngine:
         date = query_engine._extract_date(question)
         
         # Assert
-        assert date == "2026-02-11"
+        assert date == ("2026-02-11", False)
     
     def test_extract_date_month_dd_yyyy_format(self, query_engine):
         """Test date extraction for Month DD, YYYY format."""
@@ -105,7 +105,7 @@ class TestQueryEngine:
         date = query_engine._extract_date(question)
         
         # Assert
-        assert date == "2026-02-11"
+        assert date == ("2026-02-11", False)
     
     def test_extract_date_no_date_found(self, query_engine):
         """Test date extraction when no date in question."""
@@ -261,14 +261,16 @@ class TestQueryEngine:
         """Test that merchant filter is applied to vector store query."""
         # Arrange
         question = "How much did I spend at costco?"
+        # Return empty list to trigger fuzzy matching, but we check the first call
         mock_vector_store.query.return_value = []
         
         # Act
         result = query_engine.query(question)
         
-        # Assert
-        call_args = mock_vector_store.query.call_args
-        metadata_filter = call_args[1]['metadata_filter']
+        # Assert - Check the first call (before fuzzy matching)
+        assert mock_vector_store.query.call_count >= 1
+        first_call_args = mock_vector_store.query.call_args_list[0]
+        metadata_filter = first_call_args[1]['metadata_filter']
         assert metadata_filter is not None
         assert metadata_filter['merchant'] == 'Costco'
     
@@ -276,14 +278,16 @@ class TestQueryEngine:
         """Test that both date and merchant filters are applied."""
         # Arrange
         question = "How much did I spend at costco on feb 11, 2026?"
+        # Return empty list to trigger fuzzy matching, but we check the first call
         mock_vector_store.query.return_value = []
         
         # Act
         result = query_engine.query(question)
         
-        # Assert
-        call_args = mock_vector_store.query.call_args
-        metadata_filter = call_args[1]['metadata_filter']
+        # Assert - Check the first call (before fuzzy matching)
+        assert mock_vector_store.query.call_count >= 1
+        first_call_args = mock_vector_store.query.call_args_list[0]
+        metadata_filter = first_call_args[1]['metadata_filter']
         assert metadata_filter is not None
         assert metadata_filter['date'] == '2026-02-11'
         assert metadata_filter['merchant'] == 'Costco'
@@ -351,6 +355,148 @@ class TestQueryEngine:
                 engine1 = get_query_engine()
                 engine2 = get_query_engine()
                 assert engine1 is engine2
+
+
+class TestRetrievalTimeout:
+    """Test suite for retrieval timeout functionality (Requirement 6.5)."""
+    
+    @pytest.fixture
+    def mock_embedding_engine(self):
+        """Mock embedding engine."""
+        mock = Mock()
+        mock.generate_embedding.return_value = [0.1] * 384
+        return mock
+    
+    @pytest.fixture
+    def mock_vector_store_slow(self):
+        """Mock vector store that simulates slow retrieval."""
+        import time
+        mock = Mock()
+        # Simulate slow query that takes 3 seconds
+        def slow_query(*args, **kwargs):
+            time.sleep(3)
+            return []
+        mock.query.side_effect = slow_query
+        return mock
+    
+    @pytest.fixture
+    def query_engine_with_timeout(self, mock_embedding_engine, mock_vector_store_slow):
+        """Create query engine with timeout and slow vector store."""
+        with patch('backend.query_engine.get_embedding_engine', return_value=mock_embedding_engine):
+            with patch('backend.query_engine.get_vector_store', return_value=mock_vector_store_slow):
+                engine = QueryEngine(retrieval_timeout=1.0)  # 1 second timeout
+                return engine
+    
+    def test_retrieval_timeout_returns_empty_results(self, query_engine_with_timeout):
+        """
+        Test that retrieval timeout returns empty results.
+        
+        Requirements: 6.4, 6.5
+        """
+        # Arrange
+        question = "What is the total amount?"
+        
+        # Act
+        result = query_engine_with_timeout.query(question)
+        
+        # Assert
+        assert "couldn't find any relevant information" in result['answer']
+        assert result['sources'] == []
+        assert result['aggregated_amount'] is None
+        assert 'retrieval_time' in result
+    
+    def test_retrieval_completes_within_timeout(self):
+        """
+        Test that fast retrieval completes successfully within timeout.
+        
+        Requirements: 6.5
+        """
+        # Arrange
+        mock_embedding_engine = Mock()
+        mock_embedding_engine.generate_embedding.return_value = [0.1] * 384
+        
+        mock_vector_store = Mock()
+        mock_results = [
+            QueryResult(
+                chunk_id="1",
+                content="Test content",
+                metadata={'filename': 'test.pdf'},
+                similarity_score=0.95
+            )
+        ]
+        mock_vector_store.query.return_value = mock_results
+        
+        with patch('backend.query_engine.get_embedding_engine', return_value=mock_embedding_engine):
+            with patch('backend.query_engine.get_vector_store', return_value=mock_vector_store):
+                engine = QueryEngine(retrieval_timeout=2.0)
+                
+                # Act
+                result = engine.query("test question")
+                
+                # Assert
+                assert result['retrieval_time'] < 2.0
+                assert len(result['sources']) > 0
+    
+    def test_configurable_retrieval_timeout(self):
+        """
+        Test that retrieval timeout is configurable.
+        
+        Requirements: 6.5
+        """
+        # Arrange
+        mock_embedding_engine = Mock()
+        mock_embedding_engine.generate_embedding.return_value = [0.1] * 384
+        
+        mock_vector_store = Mock()
+        mock_vector_store.query.return_value = []
+        
+        with patch('backend.query_engine.get_embedding_engine', return_value=mock_embedding_engine):
+            with patch('backend.query_engine.get_vector_store', return_value=mock_vector_store):
+                # Test with custom timeout
+                engine = QueryEngine(retrieval_timeout=5.0)
+                
+                # Assert
+                assert engine.retrieval_timeout == 5.0
+    
+    def test_similarity_threshold_filtering(self):
+        """
+        Test that similarity threshold filters low-score results.
+        
+        Requirements: 6.4
+        """
+        # Arrange
+        mock_embedding_engine = Mock()
+        mock_embedding_engine.generate_embedding.return_value = [0.1] * 384
+        
+        mock_vector_store = Mock()
+        mock_results = [
+            QueryResult(
+                chunk_id="1",
+                content="High score result",
+                metadata={'filename': 'test1.pdf'},
+                similarity_score=0.95
+            ),
+            QueryResult(
+                chunk_id="2",
+                content="Low score result",
+                metadata={'filename': 'test2.pdf'},
+                similarity_score=0.2
+            )
+        ]
+        mock_vector_store.query.return_value = mock_results
+        
+        with patch('backend.query_engine.get_embedding_engine', return_value=mock_embedding_engine):
+            with patch('backend.query_engine.get_vector_store', return_value=mock_vector_store):
+                engine = QueryEngine(similarity_threshold=0.3)
+                
+                # Act
+                result = engine.query("test question")
+                
+                # Assert
+                # Only high-score result should be in sources
+                assert len(result['sources']) == 1
+                assert result['sources'][0]['filename'] == 'test1.pdf'
+                assert result['sources'][0]['score'] == 0.95
 
 
 class TestCostcoReceiptExample:

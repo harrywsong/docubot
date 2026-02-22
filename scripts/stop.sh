@@ -1,6 +1,10 @@
 #!/bin/bash
 # RAG Chatbot Shutdown Script for macOS/Linux
 # This script stops both the backend API server and frontend development server
+# Run from project root: ./scripts/stop.sh
+
+# Change to project root directory
+cd "$(dirname "$0")/.."
 
 echo "========================================"
 echo "RAG Chatbot with Vision - Stopping..."
@@ -48,7 +52,7 @@ else
     fi
 fi
 
-# Stop frontend server
+# Stop frontend server (check both port 3000 and 5173)
 if [ -f .pids/frontend.pid ]; then
     FRONTEND_PID=$(cat .pids/frontend.pid)
     echo "Stopping frontend development server (PID: $FRONTEND_PID)..."
@@ -56,11 +60,18 @@ if [ -f .pids/frontend.pid ]; then
     rm .pids/frontend.pid
 else
     echo "Frontend PID file not found, trying to find process..."
-    # Try to find and kill by port
+    # Try to find and kill by port (Vite uses 5173 by default)
     FRONTEND_PID=$(lsof -ti:5173)
     if [ -n "$FRONTEND_PID" ]; then
         echo "Found frontend on port 5173 (PID: $FRONTEND_PID)"
         kill_process_tree $FRONTEND_PID
+    else
+        # Also check port 3000 for older setups
+        FRONTEND_PID=$(lsof -ti:3000)
+        if [ -n "$FRONTEND_PID" ]; then
+            echo "Found frontend on port 3000 (PID: $FRONTEND_PID)"
+            kill_process_tree $FRONTEND_PID
+        fi
     fi
 fi
 
