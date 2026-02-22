@@ -348,6 +348,47 @@ class VectorStore:
             logger.error(f"Error deleting chunks for file {file_path}: {e}")
             raise
     
+    def delete_by_user(self, user_id: int) -> int:
+        """
+        Delete all chunks associated with a specific user.
+        
+        Args:
+            user_id: ID of the user whose chunks should be deleted
+            
+        Returns:
+            Number of chunks deleted
+            
+        Raises:
+            RuntimeError: If vector store is in read-only mode
+        """
+        if self.read_only:
+            raise RuntimeError("Cannot delete chunks: Vector store is in read-only mode")
+        
+        logger.info(f"Deleting chunks for user_id: {user_id}")
+        
+        try:
+            results = self.collection.get(
+                where={"user_id": {"$eq": user_id}},
+                include=["metadatas"]
+            )
+            
+            if results and results['ids']:
+                chunk_ids = results['ids']
+                logger.info(f"Found {len(chunk_ids)} chunks to delete for user {user_id}")
+                
+                # Delete the chunks
+                self.collection.delete(ids=chunk_ids)
+                
+                logger.info(f"Successfully deleted {len(chunk_ids)} chunks for user {user_id}")
+                return len(chunk_ids)
+            else:
+                logger.info(f"No chunks found for user {user_id}")
+                return 0
+                
+        except Exception as e:
+            logger.error(f"Error deleting chunks for user {user_id}: {e}")
+            raise
+    
     def get_stats(self) -> Dict[str, Any]:
         """
         Get statistics about the vector store.

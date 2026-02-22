@@ -43,6 +43,10 @@ class Config:
     EXPORT_DIR = os.getenv("EXPORT_DIR", "pi_export")
     MANIFEST_PATH = os.getenv("MANIFEST_PATH", "data/manifest.json")
     
+    # Raspberry Pi sync configuration
+    PI_HOST = os.getenv("PI_HOST", "pi@raspberrypi.local")
+    PI_PATH = os.getenv("PI_PATH", "/home/pi/docubot/data/")
+    
     @classmethod
     def ensure_data_directories(cls):
         """Create data directories if they don't exist."""

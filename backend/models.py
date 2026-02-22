@@ -1,7 +1,7 @@
 """
 Data models for RAG chatbot.
 
-Defines data classes for folders, files, documents, conversations, and query results.
+Defines data classes for users, folders, files, documents, conversations, and query results.
 """
 
 from dataclasses import dataclass, field
@@ -11,10 +11,42 @@ import re
 
 
 @dataclass
+class User:
+    """Represents a user in the system."""
+    id: int
+    username: str
+    profile_picture: Optional[str]
+    created_at: datetime
+    last_active: datetime
+    
+    def validate(self) -> bool:
+        """
+        Validate user data.
+        
+        Returns:
+            True if valid, False otherwise
+        """
+        if not isinstance(self.id, int) or self.id < 0:
+            return False
+        if not self.username or not isinstance(self.username, str):
+            return False
+        if len(self.username) < 1 or len(self.username) > 50:
+            return False
+        if self.profile_picture is not None and not isinstance(self.profile_picture, str):
+            return False
+        if not isinstance(self.created_at, datetime):
+            return False
+        if not isinstance(self.last_active, datetime):
+            return False
+        return True
+
+
+@dataclass
 class WatchedFolder:
     """Represents a folder being watched for documents."""
     id: int
     path: str
+    user_id: int
     added_at: datetime
     
     def validate(self) -> bool:

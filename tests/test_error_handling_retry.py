@@ -180,7 +180,7 @@ class TestQueryEngineGracefulDegradation:
         
         # Mock embedding engine to fail
         with patch.object(query_engine.embedding_engine, 'generate_embedding', side_effect=Exception("Embedding failed")):
-            result = query_engine.query("test question")
+            result = query_engine.query("test question", user_id=1)
             
             # Should return fallback message, not crash
             assert result is not None
@@ -195,7 +195,7 @@ class TestQueryEngineGracefulDegradation:
         # Mock embedding to succeed but retrieval to fail
         with patch.object(query_engine.embedding_engine, 'generate_embedding', return_value=[0.1] * 384):
             with patch.object(query_engine, '_retrieve_with_timeout', side_effect=Exception("Retrieval failed")):
-                result = query_engine.query("test question")
+                result = query_engine.query("test question", user_id=1)
                 
                 # Should return fallback message
                 assert result is not None
@@ -215,7 +215,7 @@ class TestQueryEngineGracefulDegradation:
         with patch.object(query_engine.embedding_engine, 'generate_embedding', return_value=[0.1] * 384):
             with patch.object(query_engine, '_retrieve_with_timeout', return_value=[mock_result]):
                 with patch.object(query_engine, '_generate_response', side_effect=Exception("LLM failed")):
-                    result = query_engine.query("test question")
+                    result = query_engine.query("test question", user_id=1)
                     
                     # Should use fallback response
                     assert result is not None
@@ -229,7 +229,7 @@ class TestQueryEngineGracefulDegradation:
         
         # First query fails
         with patch.object(query_engine.embedding_engine, 'generate_embedding', side_effect=Exception("Temporary failure")):
-            result1 = query_engine.query("test question 1")
+            result1 = query_engine.query("test question 1", user_id=1)
             assert "trouble processing" in result1["answer"].lower()
         
         # Second query should work (no exception)
@@ -241,7 +241,7 @@ class TestQueryEngineGracefulDegradation:
         with patch.object(query_engine.embedding_engine, 'generate_embedding', return_value=[0.1] * 384):
             with patch.object(query_engine, '_retrieve_with_timeout', return_value=[mock_result]):
                 with patch.object(query_engine, '_generate_response', return_value="Test answer"):
-                    result2 = query_engine.query("test question 2")
+                    result2 = query_engine.query("test question 2", user_id=1)
                     assert result2["answer"] == "Test answer"
 
 
@@ -353,7 +353,7 @@ class TestIntegrationErrorHandling:
         
         # Simulate a query that fails at embedding stage
         with patch.object(query_engine.embedding_engine, 'generate_embedding', side_effect=Exception("Embedding error")):
-            result1 = query_engine.query("failing query")
+            result1 = query_engine.query("failing query", user_id=1)
             assert "trouble processing" in result1["answer"].lower()
         
         # Next query should work normally
@@ -365,6 +365,6 @@ class TestIntegrationErrorHandling:
         with patch.object(query_engine.embedding_engine, 'generate_embedding', return_value=[0.1] * 384):
             with patch.object(query_engine, '_retrieve_with_timeout', return_value=[mock_result]):
                 with patch.object(query_engine, '_generate_response', return_value="Recovered answer"):
-                    result2 = query_engine.query("working query")
+                    result2 = query_engine.query("working query", user_id=1)
                     assert result2["answer"] == "Recovered answer"
                     assert len(result2["sources"]) > 0

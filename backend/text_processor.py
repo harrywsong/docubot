@@ -201,6 +201,7 @@ def chunk_text(
     text: str,
     filename: str,
     folder_path: str,
+    user_id: int,
     page_number: Optional[int] = None,
     min_chunk_size: int = 500,
     max_chunk_size: int = 1000,
@@ -216,6 +217,7 @@ def chunk_text(
         text: Text content to chunk
         filename: Source filename
         folder_path: Source folder path
+        user_id: User ID to tag the chunks with
         page_number: Page number (for PDFs)
         min_chunk_size: Minimum chunk size in characters (default 500)
         max_chunk_size: Maximum chunk size in characters (default 1000)
@@ -241,6 +243,7 @@ def chunk_text(
         
         # Create metadata
         metadata = {
+            'user_id': user_id,  # Tag with user ID
             'filename': filename,
             'folder_path': folder_path,
             'file_type': 'text',

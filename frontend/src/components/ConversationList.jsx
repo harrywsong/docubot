@@ -2,18 +2,20 @@ import { useState, useEffect } from 'react';
 import { Plus, MessageSquare, Trash2 } from 'lucide-react';
 import { listConversations, createConversation, deleteConversation } from '../api';
 
-export default function ConversationList({ selectedConversation, onSelectConversation, onToast }) {
+export default function ConversationList({ selectedConversation, userId, onSelectConversation, onToast }) {
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    loadConversations();
-  }, []);
+    if (userId) {
+      loadConversations();
+    }
+  }, [userId]);
 
   async function loadConversations() {
     try {
       setLoading(true);
-      const data = await listConversations();
+      const data = await listConversations(userId);
       setConversations(data.conversations || []);
     } catch (error) {
       onToast(error.message, 'error');
@@ -24,7 +26,7 @@ export default function ConversationList({ selectedConversation, onSelectConvers
 
   async function handleCreate() {
     try {
-      const data = await createConversation();
+      const data = await createConversation(userId);
       setConversations(prev => [data.conversation, ...prev]);
       onSelectConversation(data.conversation.id);
       onToast('Conversation created', 'success');

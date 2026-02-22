@@ -41,6 +41,7 @@ db_manager = None
 folder_manager = None
 document_processor = None
 conversation_manager = None
+user_manager = None
 query_engine = None
 ollama_client = None
 export_manager = None
@@ -63,7 +64,7 @@ processing_status = {
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
-    global db_manager, folder_manager, document_processor, conversation_manager, query_engine, ollama_client, export_manager, processing_validator, resource_monitor, data_loader
+    global db_manager, folder_manager, document_processor, conversation_manager, user_manager, query_engine, ollama_client, export_manager, processing_validator, resource_monitor, data_loader
     
     logger.info("Starting RAG chatbot API server")
     
@@ -98,6 +99,12 @@ async def lifespan(app: FastAPI):
         )
         
         conversation_manager = ConversationManager(db_manager)
+        
+        # Initialize user manager and ensure default users exist
+        from backend.user_manager import UserManager
+        user_manager = UserManager(db_manager)
+        user_manager.ensure_default_users()
+        
         query_engine = get_query_engine()
         
         # Initialize export and validation components
@@ -199,6 +206,12 @@ async def lifespan(app: FastAPI):
             
             # Initialize query components (no document processing)
             conversation_manager = ConversationManager(db_manager)
+            
+            # Initialize user manager and ensure default users exist
+            from backend.user_manager import UserManager
+            user_manager = UserManager(db_manager)
+            user_manager.ensure_default_users()
+            
             query_engine = get_query_engine()
             ollama_client = OllamaClient(Config.OLLAMA_ENDPOINT, Config.OLLAMA_MODEL)
             
@@ -253,6 +266,7 @@ app.add_middleware(
 class AddFolderRequest(BaseModel):
     """Request model for adding a folder."""
     path: str = Field(..., description="Path to folder to watch")
+    user_id: int = Field(..., description="User ID who owns this folder")
 
 
 class AddFolderResponse(BaseModel):
@@ -265,6 +279,7 @@ class AddFolderResponse(BaseModel):
 class RemoveFolderRequest(BaseModel):
     """Request model for removing a folder."""
     path: str = Field(..., description="Path to folder to remove")
+    user_id: int = Field(..., description="User ID who owns this folder")
 
 
 class RemoveFolderResponse(BaseModel):
@@ -295,12 +310,12 @@ class ListFolderFilesResponse(BaseModel):
 @app.post("/api/folders/add", response_model=AddFolderResponse)
 async def add_folder(request: AddFolderRequest):
     """
-    Add a folder to the watched folders list.
+    Add a folder to the watched folders list for a specific user.
     
     Validates that the folder exists and is accessible before adding.
     """
     try:
-        success, message, folder = folder_manager.add_folder(request.path)
+        success, message, folder = folder_manager.add_folder(request.path, request.user_id)
         
         if not success:
             raise HTTPException(status_code=400, detail=message)
@@ -311,6 +326,7 @@ async def add_folder(request: AddFolderRequest):
             folder={
                 "id": folder.id,
                 "path": folder.path,
+                "user_id": folder.user_id,
                 "added_at": folder.added_at.isoformat()
             }
         )
@@ -325,12 +341,12 @@ async def add_folder(request: AddFolderRequest):
 @app.delete("/api/folders/remove", response_model=RemoveFolderResponse)
 async def remove_folder(request: RemoveFolderRequest):
     """
-    Remove a folder from the watched folders list.
+    Remove a folder from the watched folders list for a specific user.
     
     Also removes all associated processed file records.
     """
     try:
-        success, message = folder_manager.remove_folder(request.path)
+        success, message = folder_manager.remove_folder(request.path, request.user_id)
         
         if not success:
             raise HTTPException(status_code=404, detail=message)
@@ -348,20 +364,21 @@ async def remove_folder(request: RemoveFolderRequest):
 
 
 @app.get("/api/folders/list", response_model=FolderListResponse)
-async def list_folders():
+async def list_folders(user_id: Optional[int] = None):
     """
-    List all watched folders.
+    List watched folders, optionally filtered by user.
     
     Returns folders ordered by most recently added.
     """
     try:
-        folders = folder_manager.list_folders()
+        folders = folder_manager.list_folders(user_id=user_id)
         
         return FolderListResponse(
             folders=[
                 {
                     "id": folder.id,
                     "path": folder.path,
+                    "user_id": folder.user_id,
                     "added_at": folder.added_at.isoformat()
                 }
                 for folder in folders
@@ -411,8 +428,121 @@ async def list_folder_files(request: ListFolderFilesRequest):
 
 
 # ============================================================================
+# User Management Endpoints
+# ============================================================================
+
+class UserResponse(BaseModel):
+    """Response model for user data."""
+    id: int
+    username: str
+    profile_picture: Optional[str]
+    created_at: str
+    last_active: str
+
+
+class UserListResponse(BaseModel):
+    """Response model for listing users."""
+    users: List[Dict[str, Any]]
+
+
+@app.get("/api/users/list", response_model=UserListResponse)
+async def list_users():
+    """
+    List all users ordered by most recently active.
+    
+    Returns list of all users in the system.
+    """
+    try:
+        users = user_manager.list_users()
+        
+        return UserListResponse(
+            users=[
+                {
+                    "id": user.id,
+                    "username": user.username,
+                    "profile_picture": user.profile_picture,
+                    "created_at": user.created_at.isoformat(),
+                    "last_active": user.last_active.isoformat()
+                }
+                for user in users
+            ]
+        )
+    
+    except Exception as e:
+        logger.error(f"Failed to list users: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list users: {str(e)}")
+
+
+@app.get("/api/users/{user_id}", response_model=UserResponse)
+async def get_user(user_id: int):
+    """
+    Get a user by ID.
+    
+    Returns user information including username and profile picture.
+    """
+    try:
+        user = user_manager.get_user(user_id)
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        return UserResponse(
+            id=user.id,
+            username=user.username,
+            profile_picture=user.profile_picture,
+            created_at=user.created_at.isoformat(),
+            last_active=user.last_active.isoformat()
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get user: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get user: {str(e)}")
+
+
+@app.post("/api/users/{user_id}/select")
+async def select_user(user_id: int):
+    """
+    Select a user (updates last_active timestamp).
+    
+    Called when a user logs in.
+    """
+    try:
+        user = user_manager.get_user(user_id)
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Update last active
+        user_manager.update_last_active(user_id)
+        
+        return {
+            "success": True,
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "profile_picture": user.profile_picture,
+                "created_at": user.created_at.isoformat(),
+                "last_active": user.last_active.isoformat()
+            }
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to select user: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to select user: {str(e)}")
+
+
+# ============================================================================
 # Document Processing Endpoints
 # ============================================================================
+
+class ProcessStartRequest(BaseModel):
+    """Request model for starting document processing."""
+    pass  # No parameters needed - processes all folders automatically
+
 
 class ProcessStartResponse(BaseModel):
     """Response model for starting document processing."""
@@ -431,10 +561,11 @@ class ProcessStatusResponse(BaseModel):
 
 
 @app.post("/api/process/start", response_model=ProcessStartResponse)
-async def start_processing():
+async def start_processing(request: ProcessStartRequest):
     """
     Start document processing for all watched folders.
     
+    Each folder's documents are automatically tagged with that folder's user_id.
     Processes documents asynchronously and returns immediately with a processing ID.
     Use /api/process/status or WebSocket /api/process/stream for progress updates.
     """
@@ -461,7 +592,7 @@ async def start_processing():
         
         return ProcessStartResponse(
             success=True,
-            message="Document processing started",
+            message="Document processing started for all folders",
             processing_id="current"  # Simple ID for MVP
         )
     
@@ -560,14 +691,15 @@ async def process_stream(websocket: WebSocket):
 
 async def run_document_processing():
     """
-    Run document processing in background.
+    Run document processing in background for all folders.
     
+    Each folder's documents are automatically tagged with that folder's user_id.
     Updates global processing_status with progress.
     """
     global processing_status
     
     try:
-        logger.info("Starting background document processing")
+        logger.info(f"Starting background document processing")
         
         # Run processing (blocking operation in thread pool)
         result = await asyncio.to_thread(document_processor.process_folders)
@@ -598,6 +730,7 @@ async def run_document_processing():
 
 class CreateConversationRequest(BaseModel):
     """Request model for creating a conversation."""
+    user_id: int = Field(..., description="User ID")
     title: Optional[str] = Field(None, description="Optional conversation title")
 
 
@@ -626,13 +759,13 @@ class DeleteConversationResponse(BaseModel):
 @app.post("/api/conversations/create", response_model=CreateConversationResponse)
 async def create_conversation(request: CreateConversationRequest):
     """
-    Create a new conversation.
+    Create a new conversation for a user.
     
     Optionally accepts a title. If no title provided, it will be generated
     from the first user message.
     """
     try:
-        conversation = conversation_manager.create_conversation(title=request.title)
+        conversation = conversation_manager.create_conversation(user_id=request.user_id, title=request.title)
         
         return CreateConversationResponse(
             success=True,
@@ -651,15 +784,15 @@ async def create_conversation(request: CreateConversationRequest):
 
 
 @app.get("/api/conversations/list", response_model=ConversationListResponse)
-async def list_conversations():
+async def list_conversations(user_id: int):
     """
-    List all conversations.
+    List all conversations for a user.
     
     Returns conversations ordered by most recently updated.
     Does not include messages (use GET /api/conversations/:id for full conversation).
     """
     try:
-        conversations = conversation_manager.list_conversations()
+        conversations = conversation_manager.list_conversations(user_id=user_id)
         
         return ConversationListResponse(
             conversations=[
@@ -748,6 +881,7 @@ async def delete_conversation(conversation_id: str):
 
 class QueryRequest(BaseModel):
     """Request model for querying."""
+    user_id: int = Field(..., description="User ID")
     conversation_id: str = Field(..., description="ID of the conversation")
     question: str = Field(..., description="User's question")
 
@@ -794,10 +928,11 @@ async def query(request: QueryRequest):
                     "content": msg.content
                 })
         
-        # Process query using RAG with conversation history
+        # Process query using RAG with conversation history and user_id filter
         result = await asyncio.to_thread(
             query_engine.query,
             question=request.question,
+            user_id=request.user_id,
             conversation_history=conversation_history,
             top_k=5,
             timeout_seconds=10
@@ -1419,39 +1554,144 @@ if __name__ == "__main__":
     )
 
 
-@app.post("/api/admin/clear-all-data")
-async def clear_all_data():
+@app.post("/api/admin/clear-user-data")
+async def clear_user_data(request: dict):
     """
-    Clear all data - vector store and processing state.
+    Clear all data for a specific user - vector store chunks and processing state.
     
-    WARNING: This is a destructive operation for testing purposes only.
+    Args:
+        request: Dictionary with 'user_id' key
     """
     try:
-        logger.warning("Clearing all data (vector store + processing state)")
+        user_id = request.get('user_id')
+        if not user_id:
+            raise HTTPException(status_code=400, detail="user_id is required")
         
-        # Clear vector store
+        logger.warning(f"Clearing all data for user {user_id} (vector store + processing state)")
+        
+        # Clear vector store chunks for this user
         vs = get_vector_store()
-        vs.reset()
-        logger.info("Vector store cleared")
+        chunks_deleted = vs.delete_by_user(user_id)
+        logger.info(f"Deleted {chunks_deleted} chunks from vector store for user {user_id}")
         
-        # Clear processing state
+        # Clear processing state for this user's files
         with db_manager.transaction() as conn:
-            cursor = conn.execute("SELECT COUNT(*) FROM processed_files")
-            count = cursor.fetchone()[0]
+            # Get folders for this user
+            cursor = conn.execute(
+                "SELECT id FROM folders WHERE user_id = ?",
+                (user_id,)
+            )
+            folder_ids = [row['id'] for row in cursor.fetchall()]
             
-            if count > 0:
-                conn.execute("DELETE FROM processed_files")
-                logger.info(f"Cleared processing state for {count} files")
+            if folder_ids:
+                # Delete processed files for these folders
+                placeholders = ','.join('?' * len(folder_ids))
+                cursor = conn.execute(
+                    f"SELECT COUNT(*) FROM processed_files WHERE folder_id IN ({placeholders})",
+                    folder_ids
+                )
+                count = cursor.fetchone()[0]
+                
+                if count > 0:
+                    conn.execute(
+                        f"DELETE FROM processed_files WHERE folder_id IN ({placeholders})",
+                        folder_ids
+                    )
+                    logger.info(f"Cleared processing state for {count} files for user {user_id}")
             else:
                 count = 0
         
         return {
             "success": True,
-            "message": f"Cleared all data: vector store reset, {count} files removed from processing state"
+            "message": f"Cleared data for user {user_id}: {chunks_deleted} chunks from vector store, {count} files from processing state"
         }
         
     except Exception as e:
-        logger.error(f"Failed to clear data: {e}")
+        logger.error(f"Failed to clear user data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/sync-to-pi")
+async def sync_to_pi(request: dict):
+    """
+    Sync processed data (ChromaDB + SQLite database) to Raspberry Pi.
+    
+    Args:
+        request: Dictionary with optional 'pi_host' and 'pi_path'
+    """
+    import subprocess
+    import platform
+    
+    pi_host = request.get('pi_host', Config.PI_HOST if hasattr(Config, 'PI_HOST') else 'pi@raspberrypi.local')
+    pi_path = request.get('pi_path', Config.PI_PATH if hasattr(Config, 'PI_PATH') else '/home/pi/docubot/data/')
+    
+    try:
+        logger.info(f"Starting sync to {pi_host}:{pi_path}")
+        
+        is_windows = platform.system() == 'Windows'
+        
+        # Check if rsync is available
+        rsync_check = subprocess.run(
+            ['rsync', '--version'] if not is_windows else ['where', 'rsync'],
+            capture_output=True,
+            text=True,
+            shell=is_windows
+        )
+        
+        if rsync_check.returncode != 0:
+            raise Exception("rsync not found. Please install rsync (Git Bash, WSL, or Cygwin on Windows)")
+        
+        # Sync ChromaDB vector store
+        logger.info("Syncing ChromaDB vector store...")
+        chromadb_result = subprocess.run(
+            ['rsync', '-avz', '--progress', './data/chromadb/', f'{pi_host}:{pi_path}/chromadb/'],
+            capture_output=True,
+            text=True,
+            shell=is_windows
+        )
+        
+        if chromadb_result.returncode != 0:
+            raise Exception(f"ChromaDB sync failed: {chromadb_result.stderr}")
+        
+        logger.info("ChromaDB sync completed")
+        
+        # Sync SQLite database
+        logger.info("Syncing SQLite database...")
+        db_result = subprocess.run(
+            ['rsync', '-avz', '--progress', './data/app.db', f'{pi_host}:{pi_path}/'],
+            capture_output=True,
+            text=True,
+            shell=is_windows
+        )
+        
+        if db_result.returncode != 0:
+            raise Exception(f"Database sync failed: {db_result.stderr}")
+        
+        logger.info("Database sync completed")
+        
+        # Get sync statistics from rsync output
+        chromadb_output = chromadb_result.stdout
+        db_output = db_result.stdout
+        
+        logger.info(f"Sync to Pi completed successfully: {pi_host}:{pi_path}")
+        return {
+            "success": True,
+            "message": f"Successfully synced data to {pi_host}",
+            "details": {
+                "chromadb_synced": True,
+                "database_synced": True,
+                "pi_host": pi_host,
+                "pi_path": pi_path
+            }
+        }
+        
+    except subprocess.CalledProcessError as e:
+        error_msg = f"Sync command failed: {e.stderr if hasattr(e, 'stderr') else str(e)}"
+        logger.error(error_msg)
+        raise HTTPException(status_code=500, detail=error_msg)
+    except Exception as e:
+        logger.error(f"Failed to sync to Pi: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 

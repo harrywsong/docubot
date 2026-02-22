@@ -80,36 +80,55 @@ class DatabaseManager:
     def _init_schema(self):
         """Initialize database schema with all tables and indexes."""
         with self.transaction() as conn:
-            # Watched folders table
+            # Users table
             conn.execute("""
-                CREATE TABLE IF NOT EXISTS folders (
+                CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    path TEXT NOT NULL UNIQUE,
-                    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    username TEXT NOT NULL UNIQUE,
+                    profile_picture TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             
-            # Processing state for incremental updates
+            # Watched folders table (now user-specific)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS folders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    path TEXT NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    UNIQUE(path, user_id)
+                )
+            """)
+            
+            # Processing state for incremental updates (now user-specific)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS processed_files (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    file_path TEXT NOT NULL UNIQUE,
+                    file_path TEXT NOT NULL,
                     folder_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
                     file_hash TEXT NOT NULL,
                     modified_at TIMESTAMP NOT NULL,
                     processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     file_type TEXT NOT NULL,
-                    FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE
+                    FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    UNIQUE(file_path, user_id)
                 )
             """)
             
-            # Conversations table
+            # Conversations table (now user-specific)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS conversations (
                     id TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
                     title TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                 )
             """)
             
@@ -134,7 +153,12 @@ class DatabaseManager:
             
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_processed_files_path 
-                ON processed_files(file_path)
+                ON processed_files(file_path, user_id)
+            """)
+            
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_conversations_user 
+                ON conversations(user_id, updated_at)
             """)
             
         logger.info(f"Database schema initialized at {self.db_path}")

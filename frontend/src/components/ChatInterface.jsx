@@ -3,7 +3,7 @@ import { Send, Folder, ChevronDown, ChevronUp, User } from 'lucide-react';
 import { getConversation, submitQuery, openFolder } from '../api';
 import logo from '../assets/logo.png';
 
-export default function ChatInterface({ conversationId, onToast }) {
+export default function ChatInterface({ conversationId, userId, onToast }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -61,7 +61,7 @@ export default function ChatInterface({ conversationId, onToast }) {
     setMessages(prev => [...prev, userMessage]);
 
     try {
-      const response = await submitQuery(conversationId, question);
+      const response = await submitQuery(userId, conversationId, question);
       
       const assistantMessage = {
         id: Date.now() + 1,

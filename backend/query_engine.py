@@ -91,6 +91,7 @@ class QueryEngine:
     def query(
         self,
         question: str,
+        user_id: int,
         conversation_history: List[Dict[str, str]] = None,
         top_k: int = 5,
         timeout_seconds: int = 10
@@ -106,6 +107,7 @@ class QueryEngine:
         
         Args:
             question: User's current question
+            user_id: User ID for filtering documents
             conversation_history: List of previous messages [{"role": "user/assistant", "content": "..."}]
             top_k: Number of similar chunks to retrieve (default: 5)
             timeout_seconds: Query timeout in seconds (default: 10)
@@ -121,7 +123,7 @@ class QueryEngine:
         Requirements: 14.2, 14.3
         """
         try:
-            self._log_with_context(f"Processing query: {question}")
+            self._log_with_context(f"Processing query for user {user_id}: {question}")
             retrieval_start = time.time()
             
             # Build context-aware query by considering conversation history
@@ -145,8 +147,14 @@ class QueryEngine:
                     "retrieval_time": 0.0
                 }
             
-            # Step 2: Extract metadata filters from question
+            # Step 2: Extract metadata filters from question and add user_id filter
             metadata_filter = self._extract_metadata_filters(question)
+            
+            # Add user_id filter
+            if metadata_filter is None:
+                metadata_filter = {}
+            metadata_filter['user_id'] = user_id
+            
             self._log_with_context(f"Extracted metadata filters: {metadata_filter}")
             
             # Prepare filter for vector store (remove internal flags)
@@ -155,7 +163,7 @@ class QueryEngine:
                 vector_store_filter = {k: v for k, v in metadata_filter.items() if not k.startswith('_')}
             
             # Step 3: Retrieve similar chunks from vector store with timeout and error handling
-            self._log_with_context(f"Retrieving top {top_k} similar chunks (timeout: {self.retrieval_timeout}s)")
+            self._log_with_context(f"Retrieving top {top_k} similar chunks for user {user_id} (timeout: {self.retrieval_timeout}s)")
             try:
                 results = self._retrieve_with_timeout(
                     question_embedding=question_embedding,

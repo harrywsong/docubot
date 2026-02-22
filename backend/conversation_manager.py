@@ -27,11 +27,12 @@ class ConversationManager:
         """
         self.db = db_manager
     
-    def create_conversation(self, title: Optional[str] = None) -> Conversation:
+    def create_conversation(self, user_id: int, title: Optional[str] = None) -> Conversation:
         """
-        Create a new conversation.
+        Create a new conversation for a user.
         
         Args:
+            user_id: User ID
             title: Optional conversation title. If None, will be generated from first message.
         
         Returns:
@@ -43,13 +44,13 @@ class ConversationManager:
         with self.db.transaction() as conn:
             conn.execute(
                 """
-                INSERT INTO conversations (id, title, created_at, updated_at)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO conversations (id, user_id, title, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (conversation_id, title, now, now)
+                (conversation_id, user_id, title, now, now)
             )
         
-        logger.info(f"Created conversation {conversation_id}")
+        logger.info(f"Created conversation {conversation_id} for user {user_id}")
         
         return Conversation(
             id=conversation_id,
@@ -59,9 +60,12 @@ class ConversationManager:
             messages=[]
         )
     
-    def list_conversations(self) -> List[Conversation]:
+    def list_conversations(self, user_id: int) -> List[Conversation]:
         """
-        List all conversations ordered by most recently updated.
+        List all conversations for a user ordered by most recently updated.
+        
+        Args:
+            user_id: User ID
         
         Returns:
             List of Conversation objects (without messages loaded)
@@ -71,8 +75,10 @@ class ConversationManager:
                 """
                 SELECT id, title, created_at, updated_at
                 FROM conversations
+                WHERE user_id = ?
                 ORDER BY updated_at DESC
-                """
+                """,
+                (user_id,)
             )
             rows = cursor.fetchall()
         
@@ -86,7 +92,7 @@ class ConversationManager:
                 messages=[]
             ))
         
-        logger.debug(f"Listed {len(conversations)} conversations")
+        logger.debug(f"Listed {len(conversations)} conversations for user {user_id}")
         return conversations
 
     

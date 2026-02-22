@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { MessageSquare, FolderOpen, Settings } from 'lucide-react';
+import { MessageSquare, FolderOpen, LogOut } from 'lucide-react';
 import ChatInterface from './components/ChatInterface';
 import ConversationList from './components/ConversationList';
-import FolderManagement from './components/FolderManagement';
-import ProcessingPanel from './components/ProcessingPanel';
+import DocumentManager from './components/DocumentManager';
 import HealthCheck from './components/HealthCheck';
 import Toast from './components/Toast';
+import LoginScreen from './components/LoginScreen';
 import './index.css';
 
 // Import logo - you can replace this with your actual logo file
@@ -15,15 +15,43 @@ import './index.css';
 import logo from './assets/logo.png';
 
 function App() {
+  const [currentUser, setCurrentUser] = useState(null);
   const [activeView, setActiveView] = useState('chat');
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [toast, setToast] = useState(null);
   const [healthStatus, setHealthStatus] = useState(null);
 
+  // Check for stored user on mount
+  useEffect(() => {
+    const storedUser = localStorage.getItem('currentUser');
+    if (storedUser) {
+      try {
+        setCurrentUser(JSON.parse(storedUser));
+      } catch (error) {
+        console.error('Failed to parse stored user:', error);
+        localStorage.removeItem('currentUser');
+      }
+    }
+  }, []);
+
   // Show toast notification
   const showToast = (message, type = 'info') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
+  };
+
+  // Handle login
+  const handleLogin = (user) => {
+    setCurrentUser(user);
+    showToast(`Welcome back, ${user.username}!`, 'success');
+  };
+
+  // Handle logout
+  const handleLogout = () => {
+    localStorage.removeItem('currentUser');
+    setCurrentUser(null);
+    setSelectedConversation(null);
+    showToast('Logged out successfully', 'info');
   };
 
   // Check health on mount
@@ -39,6 +67,22 @@ function App() {
     };
     checkHealth();
   }, []);
+
+  // Show login screen if no user is logged in
+  if (!currentUser) {
+    return (
+      <>
+        <LoginScreen onLogin={handleLogin} />
+        {toast && (
+          <Toast
+            message={toast.message}
+            type={toast.type}
+            onClose={() => setToast(null)}
+          />
+        )}
+      </>
+    );
+  }
 
   return (
     <div className="min-h-screen relative overflow-hidden">
@@ -89,27 +133,15 @@ function App() {
             </button>
             
             <button
-              onClick={() => setActiveView('folders')}
+              onClick={() => setActiveView('documents')}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
-                activeView === 'folders'
+                activeView === 'documents'
                   ? 'bg-white/[0.08] text-foreground shadow-inner-highlight'
                   : 'text-foreground-muted hover:bg-white/[0.05] hover:text-foreground'
               }`}
             >
               <FolderOpen className="w-5 h-5" />
               <span className="font-medium">Documents</span>
-            </button>
-            
-            <button
-              onClick={() => setActiveView('processing')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
-                activeView === 'processing'
-                  ? 'bg-white/[0.08] text-foreground shadow-inner-highlight'
-                  : 'text-foreground-muted hover:bg-white/[0.05] hover:text-foreground'
-              }`}
-            >
-              <Settings className="w-5 h-5" />
-              <span className="font-medium">Processing</span>
             </button>
           </nav>
 
@@ -124,6 +156,7 @@ function App() {
               <div className="flex-1 overflow-y-auto custom-scrollbar">
                 <ConversationList
                   selectedConversation={selectedConversation}
+                  userId={currentUser.id}
                   onSelectConversation={setSelectedConversation}
                   onToast={showToast}
                 />
@@ -135,6 +168,42 @@ function App() {
           <div className="p-4 border-t border-white/[0.06]">
             <HealthCheck status={healthStatus} />
           </div>
+
+          {/* User Profile with Logout */}
+          <div className="p-4 border-t border-white/[0.06]">
+            <div className="glass-card p-4">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-accent to-indigo-600 flex items-center justify-center flex-shrink-0">
+                  {currentUser.profile_picture ? (
+                    <img 
+                      src={`/assets/profiles/${currentUser.profile_picture}`} 
+                      alt={currentUser.username}
+                      className="w-full h-full object-cover rounded-lg"
+                    />
+                  ) : (
+                    <span className="text-white font-semibold">
+                      {currentUser.username.charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-foreground truncate">
+                    {currentUser.username}
+                  </p>
+                  <p className="text-xs text-foreground-muted">
+                    Logged in
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="w-full btn-ghost text-sm py-2 flex items-center justify-center gap-2"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Logout</span>
+              </button>
+            </div>
+          </div>
         </aside>
 
         {/* Main Content */}
@@ -142,38 +211,23 @@ function App() {
           {activeView === 'chat' && (
             <ChatInterface
               conversationId={selectedConversation}
+              userId={currentUser.id}
               onToast={showToast}
             />
           )}
           
-          {activeView === 'folders' && (
+          {activeView === 'documents' && (
             <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
               <div className="max-w-4xl mx-auto">
                 <div className="mb-8 animate-fade-up">
                   <h2 className="text-4xl font-semibold gradient-text mb-3">
-                    Document Management
+                    Documents
                   </h2>
                   <p className="text-lg text-foreground-muted">
-                    Add folders containing your documents to process and index
+                    Manage your folders and process documents
                   </p>
                 </div>
-                <FolderManagement onToast={showToast} />
-              </div>
-            </div>
-          )}
-          
-          {activeView === 'processing' && (
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
-              <div className="max-w-4xl mx-auto">
-                <div className="mb-8 animate-fade-up">
-                  <h2 className="text-4xl font-semibold gradient-text mb-3">
-                    Document Processing
-                  </h2>
-                  <p className="text-lg text-foreground-muted">
-                    Process documents to extract and index their content
-                  </p>
-                </div>
-                <ProcessingPanel onToast={showToast} />
+                <DocumentManager userId={currentUser.id} onToast={showToast} />
               </div>
             </div>
           )}

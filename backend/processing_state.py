@@ -128,7 +128,8 @@ class ProcessingStateManager:
         self,
         file_path: str,
         folder_id: int,
-        file_type: Literal["text", "image"]
+        file_type: Literal["text", "image"],
+        user_id: int
     ) -> None:
         """
         Update processing state after successful file processing.
@@ -137,6 +138,7 @@ class ProcessingStateManager:
             file_path: Path to processed file
             folder_id: ID of folder containing the file
             file_type: Type of file ("text" or "image")
+            user_id: User ID who owns this file
             
         Raises:
             FileNotFoundError: If file doesn't exist
@@ -173,9 +175,9 @@ class ProcessingStateManager:
             conn.execute(
                 """
                 INSERT INTO processed_files 
-                    (file_path, folder_id, file_hash, modified_at, file_type)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(file_path) DO UPDATE SET
+                    (file_path, folder_id, user_id, file_hash, modified_at, file_type)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(file_path, user_id) DO UPDATE SET
                     file_hash = excluded.file_hash,
                     modified_at = excluded.modified_at,
                     processed_at = CURRENT_TIMESTAMP,
@@ -185,10 +187,11 @@ class ProcessingStateManager:
                 (
                     str(path.absolute()),
                     folder_id,
+                    user_id,
                     current_hash,
                     current_mtime.isoformat(),
                     file_type
                 )
             )
         
-        logger.info(f"Updated processing state for {file_path}")
+        logger.info(f"Updated processing state for {file_path} (user_id={user_id})")

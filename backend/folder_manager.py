@@ -7,7 +7,7 @@ Handles folder addition, removal, listing, and scanning for supported file types
 import os
 import logging
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from datetime import datetime
 
 from backend.database import DatabaseManager
@@ -33,12 +33,13 @@ class FolderManager:
         """
         self.db = db_manager
     
-    def add_folder(self, folder_path: str) -> Tuple[bool, str, WatchedFolder]:
+    def add_folder(self, folder_path: str, user_id: int) -> Tuple[bool, str, WatchedFolder]:
         """
-        Add a folder to the watched folders list.
+        Add a folder to the watched folders list for a specific user.
         
         Args:
             folder_path: Path to folder to watch
+            user_id: User ID who owns this folder
             
         Returns:
             Tuple of (success, message, watched_folder or None)
@@ -53,10 +54,10 @@ class FolderManager:
         
         try:
             with self.db.transaction() as conn:
-                # Check if folder already exists
+                # Check if folder already exists for this user
                 cursor = conn.execute(
-                    "SELECT id, path, added_at FROM folders WHERE path = ?",
-                    (abs_path,)
+                    "SELECT id, path, user_id, added_at FROM folders WHERE path = ? AND user_id = ?",
+                    (abs_path, user_id)
                 )
                 existing = cursor.fetchone()
                 
@@ -64,20 +65,21 @@ class FolderManager:
                     folder = WatchedFolder(
                         id=existing['id'],
                         path=existing['path'],
+                        user_id=existing['user_id'],
                         added_at=datetime.fromisoformat(existing['added_at'])
                     )
-                    return False, f"Folder already exists: {abs_path}", folder
+                    return False, f"Folder already exists for this user: {abs_path}", folder
                 
                 # Insert new folder
                 cursor = conn.execute(
-                    "INSERT INTO folders (path) VALUES (?)",
-                    (abs_path,)
+                    "INSERT INTO folders (path, user_id) VALUES (?, ?)",
+                    (abs_path, user_id)
                 )
                 folder_id = cursor.lastrowid
                 
                 # Fetch the created folder
                 cursor = conn.execute(
-                    "SELECT id, path, added_at FROM folders WHERE id = ?",
+                    "SELECT id, path, user_id, added_at FROM folders WHERE id = ?",
                     (folder_id,)
                 )
                 row = cursor.fetchone()
@@ -85,22 +87,24 @@ class FolderManager:
                 folder = WatchedFolder(
                     id=row['id'],
                     path=row['path'],
+                    user_id=row['user_id'],
                     added_at=datetime.fromisoformat(row['added_at'])
                 )
                 
-                logger.info(f"Added folder: {abs_path}")
+                logger.info(f"Added folder for user {user_id}: {abs_path}")
                 return True, f"Folder added successfully: {abs_path}", folder
                 
         except Exception as e:
             logger.error(f"Failed to add folder {folder_path}: {e}")
             return False, f"Failed to add folder: {str(e)}", None
     
-    def remove_folder(self, folder_path: str) -> Tuple[bool, str]:
+    def remove_folder(self, folder_path: str, user_id: int) -> Tuple[bool, str]:
         """
-        Remove a folder from the watched folders list.
+        Remove a folder from the watched folders list for a specific user.
         
         Args:
             folder_path: Path to folder to remove
+            user_id: User ID who owns this folder
             
         Returns:
             Tuple of (success, message)
@@ -110,47 +114,57 @@ class FolderManager:
         
         try:
             with self.db.transaction() as conn:
-                # Check if folder exists
+                # Check if folder exists for this user
                 cursor = conn.execute(
-                    "SELECT id FROM folders WHERE path = ?",
-                    (abs_path,)
+                    "SELECT id FROM folders WHERE path = ? AND user_id = ?",
+                    (abs_path, user_id)
                 )
                 existing = cursor.fetchone()
                 
                 if not existing:
-                    return False, f"Folder not found: {abs_path}"
+                    return False, f"Folder not found for this user: {abs_path}"
                 
                 # Delete folder (CASCADE will delete associated processed_files)
                 conn.execute(
-                    "DELETE FROM folders WHERE path = ?",
-                    (abs_path,)
+                    "DELETE FROM folders WHERE path = ? AND user_id = ?",
+                    (abs_path, user_id)
                 )
                 
-                logger.info(f"Removed folder: {abs_path}")
+                logger.info(f"Removed folder for user {user_id}: {abs_path}")
                 return True, f"Folder removed successfully: {abs_path}"
                 
         except Exception as e:
             logger.error(f"Failed to remove folder {folder_path}: {e}")
             return False, f"Failed to remove folder: {str(e)}"
     
-    def list_folders(self) -> List[WatchedFolder]:
+    def list_folders(self, user_id: Optional[int] = None) -> List[WatchedFolder]:
         """
-        List all watched folders.
+        List watched folders, optionally filtered by user.
+        
+        Args:
+            user_id: Optional user ID to filter folders
         
         Returns:
             List of WatchedFolder objects
         """
         try:
             with self.db.transaction() as conn:
-                cursor = conn.execute(
-                    "SELECT id, path, added_at FROM folders ORDER BY added_at DESC"
-                )
+                if user_id is not None:
+                    cursor = conn.execute(
+                        "SELECT id, path, user_id, added_at FROM folders WHERE user_id = ? ORDER BY added_at DESC",
+                        (user_id,)
+                    )
+                else:
+                    cursor = conn.execute(
+                        "SELECT id, path, user_id, added_at FROM folders ORDER BY added_at DESC"
+                    )
                 rows = cursor.fetchall()
                 
                 folders = [
                     WatchedFolder(
                         id=row['id'],
                         path=row['path'],
+                        user_id=row['user_id'],
                         added_at=datetime.fromisoformat(row['added_at'])
                     )
                     for row in rows

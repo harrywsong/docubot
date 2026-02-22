@@ -138,11 +138,12 @@ class DocumentProcessor:
         
         Scans all watched folders, routes files to appropriate processors,
         generates embeddings, stores in vector store, and updates processing state.
+        Each folder's documents are automatically tagged with that folder's user_id.
         
         Returns:
             ProcessingResult with counts of processed, skipped, and failed files
         """
-        logger.info("Starting document processing")
+        logger.info(f"Starting document processing")
         
         # Initialize counters
         processed_count = 0
@@ -170,7 +171,7 @@ class DocumentProcessor:
         
         # Process each folder
         for folder in folders:
-            logger.info(f"Scanning folder: {folder.path}")
+            logger.info(f"Scanning folder (user_id={folder.user_id}): {folder.path}")
             
             # Scan folder for files
             text_files, image_files = self.folder_manager.scan_folder(folder.path)
@@ -178,9 +179,9 @@ class DocumentProcessor:
             
             logger.info(f"Found {len(text_files)} text files and {len(image_files)} image files")
             
-            # Process each file
+            # Process each file with the folder's user_id
             for file_path in text_files:
-                result = self._process_text_file(file_path, folder.id)
+                result = self._process_text_file(file_path, folder.id, folder.user_id)
                 if result == "processed":
                     processed_count += 1
                     processed_files.append(file_path)
@@ -193,7 +194,7 @@ class DocumentProcessor:
                     failed_files.append((file_path, error_msg))
             
             for file_path in image_files:
-                result = self._process_image_file(file_path, folder.id)
+                result = self._process_image_file(file_path, folder.id, folder.user_id)
                 if result == "processed":
                     processed_count += 1
                     processed_files.append(file_path)
@@ -219,7 +220,7 @@ class DocumentProcessor:
             skipped_files=skipped_files
         )
     
-    def _process_text_file(self, file_path: str, folder_id: int) -> str:
+    def _process_text_file(self, file_path: str, folder_id: int, user_id: int) -> str:
         """
         Process a text file (PDF or TXT) with hybrid approach.
         
@@ -257,7 +258,7 @@ class DocumentProcessor:
                 if not pages or len(pages) == 0:
                     logger.warning(f"PDF has no extractable text, treating as image-only: {file_path}")
                     # Fall back to image processing for image-only PDFs
-                    return self._process_pdf_as_image(file_path, folder_id)
+                    return self._process_pdf_as_image(file_path, folder_id, user_id)
                 
                 # Process text content
                 for page_data in pages:
@@ -266,6 +267,7 @@ class DocumentProcessor:
                             text=page_data['text'],
                             filename=path.name,
                             folder_path=str(path.parent),
+                            user_id=user_id,
                             page_number=page_data['page_number']
                         )
                         chunks.extend(page_chunks)
@@ -281,7 +283,8 @@ class DocumentProcessor:
                     vision_chunks = self._process_pdf_pages_with_vision(
                         file_path, 
                         path, 
-                        page_numbers=[p['page_number'] for p in pages_needing_vision]
+                        page_numbers=[p['page_number'] for p in pages_needing_vision],
+                        user_id=user_id
                     )
                     
                     if vision_chunks:
@@ -298,7 +301,8 @@ class DocumentProcessor:
                 chunks = chunk_text(
                     text=text,
                     filename=path.name,
-                    folder_path=str(path.parent)
+                    folder_path=str(path.parent),
+                    user_id=user_id
                 )
             
             else:
@@ -328,7 +332,7 @@ class DocumentProcessor:
             self.vector_store.add_chunks(chunks)
             
             # Update processing state
-            self.state_manager.update_file_state(file_path, folder_id, "text")
+            self.state_manager.update_file_state(file_path, folder_id, "text", user_id)
             
             logger.info(f"Successfully processed {file_path}: {len(chunks)} chunks")
             return "processed"
@@ -338,7 +342,7 @@ class DocumentProcessor:
             logger.error(f"Failed to process text file {file_path}: {error_msg}")
             return f"failed:{error_msg}"
     
-    def _process_pdf_pages_with_vision(self, file_path: str, path: Path, page_numbers: List[int]) -> List[DocumentChunk]:
+    def _process_pdf_pages_with_vision(self, file_path: str, path: Path, page_numbers: List[int], user_id: int) -> List[DocumentChunk]:
         """
         Process specific PDF pages with vision model to extract visual information.
         
@@ -349,6 +353,7 @@ class DocumentProcessor:
             file_path: Path to PDF file
             path: Path object for the file
             page_numbers: List of page numbers to process (1-indexed)
+            user_id: User ID to tag the document with
             
         Returns:
             List of DocumentChunk objects with vision-extracted content
@@ -430,6 +435,7 @@ class DocumentProcessor:
                     
                     # Create document chunk with metadata
                     metadata = {
+                        'user_id': user_id,  # Tag with user ID
                         'filename': path.name,
                         'folder_path': str(path.parent),
                         'file_type': 'pdf_vision',  # Mark as vision-extracted
@@ -459,7 +465,7 @@ class DocumentProcessor:
             logger.error(f"Failed to process PDF pages with vision: {e}")
             return []
     
-    def _process_image_file(self, file_path: str, folder_id: int) -> str:
+    def _process_image_file(self, file_path: str, folder_id: int, user_id: int) -> str:
         """
         Process an image file with vision model.
         
@@ -468,6 +474,7 @@ class DocumentProcessor:
         Args:
             file_path: Path to file
             folder_id: ID of folder containing the file
+            user_id: User ID to tag the document with
             
         Returns:
             "processed", "skipped", or "failed:<error_message>"
@@ -513,6 +520,7 @@ class DocumentProcessor:
             # Create document chunk with metadata
             path = Path(file_path)
             metadata = {
+                'user_id': user_id,  # Tag with user ID
                 'filename': path.name,
                 'folder_path': str(path.parent),
                 'file_type': 'image',
@@ -547,7 +555,7 @@ class DocumentProcessor:
             self.vector_store.add_chunks([chunk])
             
             # Update processing state
-            self.state_manager.update_file_state(file_path, folder_id, "image")
+            self.state_manager.update_file_state(file_path, folder_id, "image", user_id)
             
             logger.info(f"Successfully processed {file_path}")
             return "processed"
@@ -557,7 +565,7 @@ class DocumentProcessor:
             logger.error(f"Failed to process image file {file_path}: {error_msg}")
             return f"failed:{error_msg}"
 
-    def _process_pdf_as_image(self, file_path: str, folder_id: int) -> str:
+    def _process_pdf_as_image(self, file_path: str, folder_id: int, user_id: int) -> str:
         """
         Process a PDF by converting pages to images and using vision model.
         
@@ -567,6 +575,7 @@ class DocumentProcessor:
         Args:
             file_path: Path to PDF file
             folder_id: ID of folder containing the file
+            user_id: User ID to tag the document with
             
         Returns:
             "processed", "skipped", or "failed:<error_message>"
@@ -647,6 +656,7 @@ class DocumentProcessor:
                     
                     # Create document chunk with metadata
                     metadata = {
+                        'user_id': user_id,  # Tag with user ID
                         'filename': path.name,
                         'folder_path': str(path.parent),
                         'file_type': 'pdf_image',
@@ -688,7 +698,7 @@ class DocumentProcessor:
             self.vector_store.add_chunks(all_chunks)
             
             # Update processing state
-            self.state_manager.update_file_state(file_path, folder_id, "pdf_image")
+            self.state_manager.update_file_state(file_path, folder_id, "pdf_image", user_id)
             
             logger.info(f"Successfully processed PDF as image: {file_path} ({len(all_chunks)} pages)")
             return "processed"

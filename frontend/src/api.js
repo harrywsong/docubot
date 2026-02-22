@@ -28,22 +28,22 @@ async function fetchAPI(endpoint, options = {}) {
 // Folder Management
 // ============================================================================
 
-export async function addFolder(path) {
+export async function addFolder(path, userId) {
   return fetchAPI('/folders/add', {
     method: 'POST',
-    body: JSON.stringify({ path }),
+    body: JSON.stringify({ path, user_id: userId }),
   });
 }
 
-export async function removeFolder(path) {
+export async function removeFolder(path, userId) {
   return fetchAPI('/folders/remove', {
     method: 'DELETE',
-    body: JSON.stringify({ path }),
+    body: JSON.stringify({ path, user_id: userId }),
   });
 }
 
-export async function listFolders() {
-  return fetchAPI('/folders/list');
+export async function listFolders(userId) {
+  return fetchAPI(`/folders/list?user_id=${userId}`);
 }
 
 export async function listFolderFiles(path) {
@@ -60,6 +60,7 @@ export async function listFolderFiles(path) {
 export async function startProcessing() {
   return fetchAPI('/process/start', {
     method: 'POST',
+    body: JSON.stringify({}),
   });
 }
 
@@ -92,18 +93,36 @@ export function connectProcessingStream(onMessage, onError) {
 }
 
 // ============================================================================
-// Conversations
+// Users
 // ============================================================================
 
-export async function createConversation(title = null) {
-  return fetchAPI('/conversations/create', {
+export async function listUsers() {
+  return fetchAPI('/users/list');
+}
+
+export async function getUser(userId) {
+  return fetchAPI(`/users/${userId}`);
+}
+
+export async function selectUser(userId) {
+  return fetchAPI(`/users/${userId}/select`, {
     method: 'POST',
-    body: JSON.stringify({ title }),
   });
 }
 
-export async function listConversations() {
-  return fetchAPI('/conversations/list');
+// ============================================================================
+// Conversations
+// ============================================================================
+
+export async function createConversation(userId, title = null) {
+  return fetchAPI('/conversations/create', {
+    method: 'POST',
+    body: JSON.stringify({ user_id: userId, title }),
+  });
+}
+
+export async function listConversations(userId) {
+  return fetchAPI(`/conversations/list?user_id=${userId}`);
 }
 
 export async function getConversation(conversationId) {
@@ -120,10 +139,11 @@ export async function deleteConversation(conversationId) {
 // Query
 // ============================================================================
 
-export async function submitQuery(conversationId, question) {
+export async function submitQuery(userId, conversationId, question) {
   return fetchAPI('/query', {
     method: 'POST',
     body: JSON.stringify({
+      user_id: userId,
       conversation_id: conversationId,
       question,
     }),
@@ -145,6 +165,23 @@ export async function checkHealth() {
 export async function clearAllData() {
   return fetchAPI('/admin/clear-all-data', {
     method: 'POST',
+  });
+}
+
+export async function clearUserData(userId) {
+  return fetchAPI('/admin/clear-user-data', {
+    method: 'POST',
+    body: JSON.stringify({ user_id: userId }),
+  });
+}
+
+export async function syncToPi(piHost = null, piPath = null) {
+  return fetchAPI('/admin/sync-to-pi', {
+    method: 'POST',
+    body: JSON.stringify({ 
+      pi_host: piHost,
+      pi_path: piPath
+    }),
   });
 }
 

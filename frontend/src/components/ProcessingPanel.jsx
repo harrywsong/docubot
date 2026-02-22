@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { Play, Trash2, FileCheck, FileX, FileWarning, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
-import { startProcessing, connectProcessingStream, clearAllData } from '../api';
+import { Play, Trash2, FileCheck, FileX, FileWarning, Loader2, ChevronDown, ChevronUp, User } from 'lucide-react';
+import { startProcessing, connectProcessingStream, clearAllData, listUsers } from '../api';
 
 export default function ProcessingPanel({ onToast }) {
   const [processing, setProcessing] = useState(false);
+  const [users, setUsers] = useState([]);
+  const [selectedUserId, setSelectedUserId] = useState(null);
   const [status, setStatus] = useState({
     processed: 0,
     skipped: 0,
@@ -18,6 +20,7 @@ export default function ProcessingPanel({ onToast }) {
   const wsRef = useRef(null);
 
   useEffect(() => {
+    loadUsers();
     return () => {
       if (wsRef.current) {
         wsRef.current.close();
@@ -25,9 +28,27 @@ export default function ProcessingPanel({ onToast }) {
     };
   }, []);
 
-  async function handleStartProcessing() {
+  async function loadUsers() {
     try {
-      await startProcessing();
+      const data = await listUsers();
+      setUsers(data.users || []);
+      // Default to first user (Harry)
+      if (data.users && data.users.length > 0) {
+        setSelectedUserId(data.users[0].id);
+      }
+    } catch (error) {
+      onToast('Failed to load users', 'error');
+    }
+  }
+
+  async function handleStartProcessing() {
+    if (!selectedUserId) {
+      onToast('Please select a user first', 'error');
+      return;
+    }
+
+    try {
+      await startProcessing(selectedUserId);
       setProcessing(true);
       setStatus({ 
         processed: 0, 
@@ -116,6 +137,32 @@ export default function ProcessingPanel({ onToast }) {
         <FileCheck className="w-4 h-4" />
         Document Processing
       </h3>
+      
+      {/* User Selector */}
+      <div className="glass-card p-4 rounded-xl">
+        <label className="block text-sm font-medium text-foreground mb-2 flex items-center gap-2">
+          <User className="w-4 h-4" />
+          Process documents for:
+        </label>
+        <select
+          value={selectedUserId || ''}
+          onChange={(e) => setSelectedUserId(parseInt(e.target.value))}
+          className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-foreground
+                     focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent/50
+                     hover:bg-white/10 transition-colors"
+          disabled={processing}
+        >
+          <option value="" disabled>Select a user...</option>
+          {users.map(user => (
+            <option key={user.id} value={user.id} className="bg-background-elevated text-foreground">
+              {user.username}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-foreground-muted mt-2">
+          Documents will be tagged with this user and only accessible to them
+        </p>
+      </div>
       
       <div className="space-y-2">
         <button
