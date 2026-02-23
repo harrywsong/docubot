@@ -64,10 +64,10 @@ class LLMGenerator:
                 # Pi mode - use the lightweight model
                 self.conversation_model = self.config.CONVERSATIONAL_MODEL
             
-            # Create client with 10-second timeout for Pi mode response generation
+            # Create client with 60-second timeout for Pi mode response generation
             self.client = ollama_client or OllamaClient(
                 model=self.conversation_model,
-                timeout=10
+                timeout=60
             )
             self._log_with_context(f"LLM generator initialized with Ollama: {self.conversation_model}")
     
