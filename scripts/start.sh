@@ -83,7 +83,7 @@ echo "RAG Chatbot is running!"
 echo "========================================"
 echo ""
 echo "Backend API: http://localhost:8000"
-echo "Frontend UI: http://localhost:5173"
+echo "Frontend UI: http://localhost:3000"
 echo ""
 echo "Logs are being written to:"
 echo "  - backend.log"
@@ -97,10 +97,10 @@ sleep 5
 # Open browser (works on macOS and most Linux)
 if command -v open &> /dev/null; then
     # macOS
-    open http://localhost:5173
+    open http://localhost:3000
 elif command -v xdg-open &> /dev/null; then
     # Linux
-    xdg-open http://localhost:5173
+    xdg-open http://localhost:3000
 fi
 
 echo ""

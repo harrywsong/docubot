@@ -74,7 +74,7 @@ echo RAG Chatbot is starting!
 echo ========================================
 echo.
 echo Backend API: http://localhost:8000
-echo Frontend UI: http://localhost:5173
+echo Frontend UI: http://localhost:3000
 echo.
 echo Two terminal windows have been opened:
 echo   1. Backend API Server
@@ -87,7 +87,7 @@ echo Opening browser in 5 seconds...
 timeout /t 5 /nobreak >nul
 
 REM Open browser
-start http://localhost:5173
+start http://localhost:3000
 
 echo.
 echo Application is running!
