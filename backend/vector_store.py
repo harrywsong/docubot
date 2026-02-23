@@ -229,8 +229,8 @@ class VectorStore:
         """
         Build ChromaDB where clause from metadata filter.
         
-        Uses exact match for all fields. The query engine should
-        extract relevant field names and values from the question.
+        Uses contains match for store names (to handle "코스트코" matching "Costco Wholesale")
+        and exact match for other fields.
         
         Args:
             metadata_filter: Dictionary of metadata filters
@@ -238,15 +238,20 @@ class VectorStore:
         Returns:
             ChromaDB where clause
         """
-        # ChromaDB where clause format: {"field": {"$eq": "value"}}
+        # ChromaDB where clause format: {"field": {"$eq": "value"}} or {"field": {"$contains": "value"}}
         # For multiple conditions, use {"$and": [condition1, condition2]}
         
         conditions = []
         
         for key, value in metadata_filter.items():
             if value is not None:
-                # Use exact match for all fields
-                conditions.append({key: {"$eq": value}})
+                # Use contains match for store field to handle partial matches
+                # (e.g., "코스트코" should match "Costco Wholesale")
+                if key == 'store':
+                    conditions.append({key: {"$contains": value}})
+                else:
+                    # Use exact match for other fields
+                    conditions.append({key: {"$eq": value}})
         
         if len(conditions) == 0:
             return None

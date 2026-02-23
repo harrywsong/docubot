@@ -15,34 +15,50 @@ from backend.models import ImageExtraction
 
 # Optimized document extraction prompt for qwen3-vl
 # Structured prompt for consistent, concise JSON output with only relevant information
-DOCUMENT_EXTRACTION_PROMPT = """Extract key information from this document. Output a JSON object with field names that match the document type.
+DOCUMENT_EXTRACTION_PROMPT = """Analyze this document and extract key information. Output a JSON object.
 
-REQUIRED CANONICAL FIELD NAMES:
-You MUST use these exact field names - do NOT use synonyms or variations:
-- For store/merchant/vendor/shop: ALWAYS use "store"
-- For transaction date/purchase date: ALWAYS use "date"
-- For total amount/grand total/amount: ALWAYS use "total"
-- For subtotal: ALWAYS use "subtotal"
-- For tax amount: ALWAYS use "tax"
-- For payment type/card type: ALWAYS use "payment_method"
+STEP 1: Identify the document type
+- Receipt/Invoice: Has store name, items purchased, prices, total amount
+- ID/Passport: Has photo, personal information, document number
+- Certificate/Form: Official document with stamps, signatures, registration info
+- Other: Any other document type
 
-RULES:
-1. Use field names appropriate for the document type
-2. Extract each field ONLY ONCE - no duplicates, no translations
-3. Maximum 15 fields
-4. Choose ONE language per field (English preferred)
-5. MUST use canonical field names listed above - no variations allowed
+STEP 2: Extract fields based on document type
 
-For receipts: store, date, total, subtotal, tax, payment_method
-For ID/passport: document_type, name, birth_date, nationality, document_number, issue_date, expiry_date
-For other documents: document_type, date, issuer, recipient, reference_number
+FOR RECEIPTS/INVOICES ONLY:
+- store: Store/merchant name (e.g., "Costco", "Walmart")
+- date: Transaction date in YYYY-MM-DD or YYYY/MM/DD format
+- total: Final amount paid (numeric value only)
+- subtotal: Amount before tax (optional)
+- tax: Tax amount (optional)
+- payment_method: How payment was made (optional)
+
+FOR ID/PASSPORT:
+- document_type: "passport" or "id_card"
+- name: Person's name
+- birth_date: Date of birth
+- nationality: Country
+- document_number: ID/passport number
+
+FOR OTHER DOCUMENTS:
+- document_type: Brief description (e.g., "certificate", "form", "letter")
+- date: Document date if visible
+- issuer: Who issued the document (optional)
+
+CRITICAL RULES:
+1. Do NOT extract receipt fields (store, total, tax) from non-receipt documents
+2. Do NOT label random text as "store" or "total" - only extract if it's clearly a receipt
+3. If unsure whether it's a receipt, set document_type and minimal fields only
+4. Use exact field names - no synonyms (merchant→store, amount→total)
+5. Extract each field ONLY ONCE - no duplicates, no translations
 
 WRONG (DO NOT DO THIS):
-{"merchant": "Costco", "store_korean": "코스트코", "vendor": "Costco"}
-{"amount": "411.89", "grand_total": "411.89"}
+{"store": "사업장 관리번호 1448118100", "total": "02-배우자"}  ← This is NOT a receipt!
+{"store": "건강증진센터", "total": "13.5"}  ← This is NOT a store!
 
 RIGHT (DO THIS):
-{"store": "Costco", "date": "2024-02-08", "total": "411.89", "subtotal": "380.00", "tax": "31.89"}
+{"document_type": "certificate", "date": "2024-02-08"}  ← For non-receipts
+{"store": "Costco", "date": "2024-02-08", "total": "411.89"}  ← For actual receipts
 
 Output ONLY valid JSON."""
 
@@ -457,9 +473,22 @@ class ImageProcessor:
         try:
             data = json.loads(raw_text.strip(), strict=False)
             logger.debug("Successfully parsed raw JSON")
-        except json.JSONDecodeError:
-            # Not raw JSON, try other formats
-            pass
+        except json.JSONDecodeError as e:
+            # JSON might be incomplete - try adding closing braces
+            if raw_text.strip() and not raw_text.strip().endswith('}'):
+                # Count opening and closing braces to determine how many we need
+                open_count = raw_text.count('{')
+                close_count = raw_text.count('}')
+                missing_braces = open_count - close_count
+                
+                if missing_braces > 0:
+                    try:
+                        fixed_json = raw_text.strip() + ('}' * missing_braces)
+                        data = json.loads(fixed_json, strict=False)
+                        logger.debug(f"Successfully parsed JSON after adding {missing_braces} closing brace(s)")
+                    except json.JSONDecodeError:
+                        # Still failed, try other formats
+                        pass
         
         # Check for JSON markers (===JSON_START=== and ===JSON_END===)
         if data is None and '===JSON_START===' in raw_text and '===JSON_END===' in raw_text:
@@ -575,7 +604,9 @@ class ImageProcessor:
             'items_count', 'quantity', 'count',
             'invoice', 'receipt', 'reference', 'auth',
             'location', 'address',
-            'birth', 'gender', 'nationality', 'status'
+            'birth', 'gender', 'nationality', 'status',
+            'title', 'content', 'applicant', 'spouse',  # For certificates
+            'section', 'subsection', 'age', 'group', 'item'  # For structured documents
         ]
         
         # Skip keywords (remove if field name contains these)
@@ -589,8 +620,9 @@ class ImageProcessor:
             'digital_coupon', 'optimum', 'reward_program'
         ]
         
-        # Duplicate detection - track base field names
-        seen_base_fields = {}
+        # Duplicate detection - track exact field names (not base names)
+        # This prevents incorrectly deduplicating fields like "store", "subtotal", "status"
+        seen_fields = set()
         
         filtered = {}
         
@@ -601,24 +633,50 @@ class ImageProcessor:
             if any(skip in key_lower for skip in skip_keywords):
                 continue
             
-            # Check for duplicate variations (e.g., "date", "date_korean", "date_english")
-            # Keep only the first/simplest version
-            base_key = key_lower.split('_')[0]  # Get base field name
-            if base_key in seen_base_fields:
-                # This is a duplicate variation, skip it
+            # Check for exact duplicate field names
+            if key_lower in seen_fields:
+                # This is an exact duplicate, skip it
                 continue
+            
+            # Check for language/format variations (e.g., "date_korean", "date_english", "date_full")
+            # Only deduplicate if the field has a suffix indicating it's a variation
+            variation_suffixes = ['_korean', '_english', '_full', '_abbreviated', '_short', '_long']
+            is_variation = any(key_lower.endswith(suffix) for suffix in variation_suffixes)
+            
+            if is_variation:
+                # Extract base field name (everything before the suffix)
+                base_key = key_lower
+                for suffix in variation_suffixes:
+                    if base_key.endswith(suffix):
+                        base_key = base_key[:-len(suffix)]
+                        break
+                
+                # Check if we already have the base field (without suffix)
+                if base_key in seen_fields:
+                    # We already have the base version, skip this variation
+                    continue
             
             # Keep if contains priority keywords
             if any(priority in key_lower for priority in priority_keywords):
                 filtered[key] = value
-                seen_base_fields[base_key] = key
+                seen_fields.add(key_lower)
                 continue
+            
+            # Also keep fields that are nested under priority keywords
+            # e.g., "content_title", "sections_count", "applicant_name"
+            key_parts = key_lower.split('_')
+            if len(key_parts) > 1:
+                # Check if any part matches priority keywords
+                if any(part in priority_keywords for part in key_parts):
+                    filtered[key] = value
+                    seen_fields.add(key_lower)
+                    continue
             
             # For other fields, only keep if we have less than 20 fields total
             # This prevents bloat while allowing some flexibility
             if len(filtered) < 20:
                 filtered[key] = value
-                seen_base_fields[base_key] = key
+                seen_fields.add(key_lower)
         
         return filtered
     def _normalize_field_names(self, fields: Dict[str, str]) -> Dict[str, str]:
@@ -680,11 +738,13 @@ class ImageProcessor:
         return normalized
     def _coerce_numeric_types(self, fields: Dict[str, str]) -> Dict[str, any]:
         """
-        Coerce string values to numeric types for numeric fields.
+        Coerce string values to numeric types for numeric fields and normalize dates.
 
         Converts string representations of numbers to float or int types
         for fields that should be numeric: total, subtotal, tax, amount,
         price, quantity.
+        
+        Also normalizes date fields to YYYY-MM-DD format for consistent querying.
 
         This enables proper range queries and mathematical operations on
         numeric metadata fields in ChromaDB.
@@ -693,18 +753,26 @@ class ImageProcessor:
             fields: Dictionary of extracted fields with string values
 
         Returns:
-            Dictionary with numeric types for numeric fields
+            Dictionary with numeric types for numeric fields and normalized dates
         """
         # Define fields that should be numeric
         numeric_fields = {
             'total', 'subtotal', 'tax', 'amount', 'price', 'quantity',
             'discount', 'tip', 'grand_total', 'balance', 'payment_amount'
         }
+        
+        # Define fields that should be normalized as dates
+        date_fields = {'date', 'transaction_date', 'purchase_date', 'receipt_date', 'sale_date'}
 
         coerced = {}
         for key, value in fields.items():
+            key_lower = key.lower()
+            
+            # Check if this field should be normalized as a date
+            if key_lower in date_fields and isinstance(value, str):
+                coerced[key] = self._normalize_date(value)
             # Check if this field should be numeric
-            if key.lower() in numeric_fields and isinstance(value, str):
+            elif key_lower in numeric_fields and isinstance(value, str):
                 try:
                     # Remove common currency symbols and whitespace
                     cleaned_value = value.strip().replace('$', '').replace(',', '').replace(' ', '')
@@ -721,7 +789,7 @@ class ImageProcessor:
                     # If conversion fails, keep as string
                     coerced[key] = value
             else:
-                # Keep non-numeric fields as-is
+                # Keep other fields as-is
                 coerced[key] = value
 
         return coerced

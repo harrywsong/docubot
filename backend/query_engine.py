@@ -218,7 +218,7 @@ class QueryEngine:
             
             return {
                 "answer": answer,
-                "sources": self._format_sources(results, top_k=3),
+                "sources": self._format_sources(results, top_k=len(results)),  # Show all sources that LLM used
                 "aggregated_amount": None,
                 "breakdown": None,
                 "retrieval_time": retrieval_time

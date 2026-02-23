@@ -254,44 +254,34 @@ Instructions:
                 conv_parts.append(f"{role}: {msg['content'][:150]}")
             conv_context = "\n".join(conv_parts)
         
-        # Build prompt with clear instructions
+        # Build prompt with clear, simple instructions
         if is_korean:
-            prompt = f"""문서 분석 어시스턴트입니다.
+            prompt = f"""다음 문서들을 보고 질문에 답하세요.
 
-규칙:
-- 한국어로 답변
-- {len(context_parts)}개 문서 확인
-- 각 문서의 메타데이터에서 "store" 필드와 "total" 필드를 확인하세요
-- 질문에서 특정 가게를 물어보면 "store" 필드가 일치하는 문서만 계산 (예: "코스트코" → store: "Costco Wholesale")
-- "총"/"전체" 요청시 해당 가게의 모든 "total" 값을 합산
-- 파일명 사용 (예: IMG_4025.jpeg)
+중요 규칙:
+1. 문서의 Metadata에서 Total 값을 정확히 읽으세요
+2. 금액을 말할 때 문서에 표시된 통화 기호를 정확히 사용하세요 (문서에 $가 있으면 $를 사용)
+3. 합계를 계산할 때는 각 문서의 Total 값을 모두 더하세요
+4. 추측하지 말고 문서에 있는 정확한 숫자만 사용하세요
+5. 반드시 한국어로만 답변하세요
 
-"""
-            if conv_context:
-                prompt += f"이전 대화:\n{conv_context}\n\n"
-            
-            prompt += f"""문서 ({len(context_parts)}개):
+문서:
 {context}
 
 질문: {question}
 
 답변:"""
         else:
-            prompt = f"""Document analysis assistant.
+            prompt = f"""Answer the question based on these documents.
 
-Rules:
-- Answer in English
-- Check all {len(context_parts)} documents
-- Look for "store" and "total" fields in each document's metadata
-- If question asks about specific store, only count documents where "store" field matches (e.g., "Costco" → store: "Costco Wholesale")
-- Aggregate all "total" values from matching store documents
-- Use filenames (e.g., IMG_4025.jpeg)
+Important rules:
+1. Read the exact Total values from the Metadata in each document
+2. Use the exact currency symbol shown in the documents (if document shows $, use $)
+3. When calculating totals, add up all the Total values from each document
+4. Do not guess - only use exact numbers from the documents
+5. Answer only in English
 
-"""
-            if conv_context:
-                prompt += f"Previous:\n{conv_context}\n\n"
-            
-            prompt += f"""Documents ({len(context_parts)}):
+Documents:
 {context}
 
 Question: {question}

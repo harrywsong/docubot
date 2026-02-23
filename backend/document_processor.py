@@ -533,7 +533,10 @@ class DocumentProcessor:
                     metadata[key] = value
                 logger.info(f"Added {len(extraction.flexible_metadata)} flexible metadata fields to chunk")
             else:
-                logger.warning(f"No flexible metadata extracted from {file_path}")
+                # No metadata extracted - this indicates a problem with extraction
+                error_msg = "No flexible metadata extracted from image"
+                logger.error(f"Failed to process {file_path}: {error_msg}")
+                return f"failed:{error_msg}"
             
             chunk = DocumentChunk(
                 content=formatted_text,

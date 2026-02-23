@@ -171,7 +171,7 @@ class OllamaClient:
             "stream": stream,
             "keep_alive": keep_alive or Config.OLLAMA_KEEP_ALIVE,
             "options": options or {
-                "num_ctx": 1536,  # Balanced: not too large (2048) but enough context for accuracy
+                "num_ctx": 4096,  # Increased from 1536 to handle 15-20 chunks with metadata
                 "num_predict": 256,  # Keep short responses for speed
                 "temperature": 0.1 if format == "json" else 0.7,  # Low temp for JSON, higher for natural language
             }
