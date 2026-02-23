@@ -6,7 +6,7 @@ from images including receipts, legal documents, passports, and general document
 """
 
 import re
-from typing import Optional
+from typing import Optional, Dict
 from pathlib import Path
 
 from backend.ollama_client import OllamaClient, OllamaError, encode_image_to_base64
@@ -14,8 +14,26 @@ from backend.models import ImageExtraction
 
 
 # Optimized document extraction prompt for qwen3-vl
-# Simple prompt - format:json forces JSON output without thinking overhead
-DOCUMENT_EXTRACTION_PROMPT = """Extract all data from this document."""
+# Structured prompt for consistent, concise JSON output with only relevant information
+DOCUMENT_EXTRACTION_PROMPT = """Extract key information from this document. Output a JSON object with field names that match the document type.
+
+RULES:
+1. Use field names appropriate for the document type
+2. Extract each field ONLY ONCE - no duplicates, no translations
+3. Maximum 15 fields
+4. Choose ONE language per field (English preferred)
+
+For receipts: store, date, total, subtotal, tax, payment_method
+For ID/passport: document_type, name, birth_date, nationality, document_number, issue_date, expiry_date
+For other documents: document_type, date, issuer, recipient, reference_number
+
+WRONG (DO NOT DO THIS):
+{"store": "Costco", "store_korean": "코스트코", "store_english": "Costco"}
+
+RIGHT (DO THIS):
+{"store": "Costco", "date": "2024-02-08", "total": "411.89"}
+
+Output ONLY valid JSON."""
 
 
 class ImageProcessor:
@@ -69,16 +87,18 @@ class ImageProcessor:
             base64_image = encode_image_to_base64(corrected_image_path)
 
             # Send to vision model with JSON format for structured extraction
-            # Use higher num_predict for vision extraction (needs to output complete JSON)
+            # Use moderate num_predict with strong repeat penalty to prevent loops
             response = self.client.generate(
                 prompt=DOCUMENT_EXTRACTION_PROMPT,
                 images=[base64_image],
                 stream=False,
                 format="json",  # Request JSON output for structured data extraction
                 options={
-                    "num_ctx": 4096,
-                    "num_predict": 2048,  # Very high limit for complete JSON extraction with all items
-                    "temperature": 0.1
+                    "num_ctx": 4096,  # Context for document understanding
+                    "num_predict": 2048,  # Moderate limit - forces conciseness
+                    "temperature": 0.1,  # Low temperature for consistency
+                    "repeat_penalty": 2.0,  # Very strong penalty to prevent repetition loops
+                    "stop": ["}}", "}\n}", "} }"]  # Stop sequences to end JSON properly
                 }
             )
 
@@ -271,6 +291,63 @@ class ImageProcessor:
         return image
     
     
+    
+    def _fix_repetition_loop(self, raw_text: str) -> str:
+        """
+        Detect and fix repetition loops in vision model output.
+        
+        The vision model sometimes gets stuck repeating the same fields with
+        variations (_korean, _english, etc.). This method detects the repetition
+        and truncates the JSON at the first complete iteration.
+        
+        Args:
+            raw_text: Raw JSON text from vision model
+            
+        Returns:
+            Fixed JSON text with repetition removed
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Only process if it looks like JSON
+        if not raw_text.strip().startswith('{'):
+            return raw_text
+        
+        # Look for repeating patterns of field names
+        # Extract all field names from the JSON
+        field_pattern = r'"([^"]+)":\s*"[^"]*"'
+        matches = list(re.finditer(field_pattern, raw_text))
+        
+        if len(matches) < 20:
+            # Too short to have repetition issues
+            return raw_text
+        
+        # Get field names in order
+        field_names = [m.group(1) for m in matches]
+        
+        # Detect repetition: look for a sequence that repeats
+        # Check if the last 10 fields appear earlier in the sequence
+        window_size = 10
+        if len(field_names) > window_size * 2:
+            last_fields = field_names[-window_size:]
+            
+            # Search for this pattern earlier in the sequence
+            for i in range(len(field_names) - window_size * 2):
+                window = field_names[i:i+window_size]
+                if window == last_fields:
+                    # Found repetition! Truncate at this point
+                    truncate_pos = matches[i].start()
+                    fixed_text = raw_text[:truncate_pos].rstrip(', \n\t') + '}'
+                    
+                    logger.warning(f"Detected repetition loop at position {truncate_pos}")
+                    logger.warning(f"Original length: {len(raw_text)}, Fixed length: {len(fixed_text)}")
+                    logger.warning(f"Repeating fields: {last_fields[:3]}...")
+                    
+                    return fixed_text
+        
+        # No repetition detected, return as-is
+        return raw_text
+    
     def _parse_response(self, raw_text: str) -> ImageExtraction:
         """
         Parse vision model response into ImageExtraction data class.
@@ -305,6 +382,10 @@ class ImageProcessor:
             raw_text = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL).strip()
             logger.debug(f"Stripped <think> tags, remaining content: {len(raw_text)} chars")
         
+        # CRITICAL: Detect and fix repetition loops before parsing
+        # Vision model sometimes gets stuck repeating the same fields
+        raw_text = self._fix_repetition_loop(raw_text)
+        
         # Try parsing as raw JSON first (most common with format:json)
         try:
             data = json.loads(raw_text.strip(), strict=False)
@@ -336,7 +417,7 @@ class ImageProcessor:
                     logger.warning(f"Failed to parse JSON from markdown: {e}")
                     pass
         
-        # If we successfully parsed JSON, flatten and store ALL fields as flexible metadata
+        # If we successfully parsed JSON, flatten and filter to keep only useful fields
         if data is not None:
             def flatten_dict(d, parent_key='', sep='_', max_list_items=5):
                 """
@@ -369,12 +450,15 @@ class ImageProcessor:
                         items.append((new_key, str(v)))
                 return dict(items)
             
-            flexible_metadata = flatten_dict(data)
+            flattened = flatten_dict(data)
+            
+            # Filter to keep only the most useful fields
+            flexible_metadata = self._filter_useful_fields(flattened)
             
             # Debug logging
-            logger.debug(f"Parsed JSON with {len(flexible_metadata)} flattened fields")
+            logger.debug(f"Parsed JSON with {len(flattened)} flattened fields, filtered to {len(flexible_metadata)} useful fields")
             if flexible_metadata:
-                logger.debug(f"Sample fields: {list(flexible_metadata.keys())[:5]}")
+                logger.debug(f"Kept fields: {list(flexible_metadata.keys())[:10]}")
         
         # Return ImageExtraction with flexible_metadata
         # The model decides what fields to extract based on document type
@@ -382,6 +466,88 @@ class ImageProcessor:
             raw_text=raw_text,
             flexible_metadata=flexible_metadata
         )
+    
+    def _filter_useful_fields(self, fields: Dict[str, str]) -> Dict[str, str]:
+        """
+        Filter metadata fields to keep only the most useful information.
+        
+        Priority fields (always keep):
+        - store, issuer, recipient
+        - date, time, transaction_date
+        - total, subtotal, tax, amount
+        - payment_type, payment_method, card_type
+        - document_type, document_number
+        - items_count, quantity
+        
+        Skip fields (always remove):
+        - Promotional text, survey codes, social media
+        - Barcodes, QR codes (unless it's the only identifier)
+        - Duplicate fields with variations (_korean, _full, _english, etc.)
+        - Fine print, legal disclaimers, terms
+        - Website URLs, phone numbers (unless critical)
+        
+        Args:
+            fields: Flattened metadata dictionary
+            
+        Returns:
+            Filtered metadata dictionary with only useful fields
+        """
+        # Priority keywords (keep if field name contains these)
+        priority_keywords = [
+            'store', 'issuer', 'recipient', 'name',
+            'date', 'time', 'transaction',
+            'total', 'subtotal', 'tax', 'amount', 'price',
+            'payment', 'card', 'account',
+            'document_type', 'document_number', 'document_id',
+            'items_count', 'quantity', 'count',
+            'invoice', 'receipt', 'reference', 'auth',
+            'location', 'address',
+            'birth', 'gender', 'nationality', 'status'
+        ]
+        
+        # Skip keywords (remove if field name contains these)
+        skip_keywords = [
+            'survey', 'promo', 'facebook', 'social', 'website', 'url',
+            'barcode', 'qr_code', 'qr',
+            'legal', 'disclaimer', 'terms', 'conditions',
+            'fine_print', 'note', 'message',
+            '_korean_full', '_english_full', '_abbreviated',
+            '_korean_english', '_full_english',
+            'digital_coupon', 'optimum', 'reward_program'
+        ]
+        
+        # Duplicate detection - track base field names
+        seen_base_fields = {}
+        
+        filtered = {}
+        
+        for key, value in fields.items():
+            key_lower = key.lower()
+            
+            # Skip if contains skip keywords
+            if any(skip in key_lower for skip in skip_keywords):
+                continue
+            
+            # Check for duplicate variations (e.g., "date", "date_korean", "date_english")
+            # Keep only the first/simplest version
+            base_key = key_lower.split('_')[0]  # Get base field name
+            if base_key in seen_base_fields:
+                # This is a duplicate variation, skip it
+                continue
+            
+            # Keep if contains priority keywords
+            if any(priority in key_lower for priority in priority_keywords):
+                filtered[key] = value
+                seen_base_fields[base_key] = key
+                continue
+            
+            # For other fields, only keep if we have less than 20 fields total
+            # This prevents bloat while allowing some flexibility
+            if len(filtered) < 20:
+                filtered[key] = value
+                seen_base_fields[base_key] = key
+        
+        return filtered
     
     def _normalize_date(self, date_str: str) -> str:
         """
