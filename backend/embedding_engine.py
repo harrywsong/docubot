@@ -112,7 +112,7 @@ class EmbeddingEngine:
             response = requests.post(
                 f"{self.ollama_endpoint}/api/embed",
                 json={"model": self.model_name, "input": text},
-                timeout=30
+                timeout=120  # Increased timeout for Pi with swap
             )
             response.raise_for_status()
             result = response.json()

@@ -1623,8 +1623,8 @@ async def sync_to_pi(request: dict):
     import platform
     import os
     
-    pi_host = request.get('pi_host', Config.PI_HOST if hasattr(Config, 'PI_HOST') else 'pi@raspberrypi.local')
-    pi_path = request.get('pi_path', Config.PI_PATH if hasattr(Config, 'PI_PATH') else '/home/pi/docubot/data/')
+    pi_host = request.get('pi_host') or (Config.PI_HOST if hasattr(Config, 'PI_HOST') else 'pi@raspberrypi.local')
+    pi_path = request.get('pi_path') or (Config.PI_PATH if hasattr(Config, 'PI_PATH') else '/home/pi/docubot/data/')
     
     try:
         logger.info(f"Starting sync to {pi_host}:{pi_path}")
