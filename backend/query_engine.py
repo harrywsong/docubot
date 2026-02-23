@@ -93,7 +93,7 @@ class QueryEngine:
         question: str,
         user_id: int,
         conversation_history: List[Dict[str, str]] = None,
-        top_k: int = 3,
+        top_k: int = 15,
         timeout_seconds: int = 10
     ) -> Dict[str, Any]:
         """
@@ -109,7 +109,7 @@ class QueryEngine:
             question: User's current question
             user_id: User ID for filtering documents
             conversation_history: List of previous messages [{"role": "user/assistant", "content": "..."}]
-            top_k: Number of similar chunks to retrieve (default: 3)
+            top_k: Number of similar chunks to retrieve (default: 15)
             timeout_seconds: Query timeout in seconds (default: 10)
             
         Returns:
@@ -125,6 +125,11 @@ class QueryEngine:
         try:
             self._log_with_context(f"Processing query for user {user_id}: {question}")
             retrieval_start = time.time()
+            
+            # Detect aggregation queries and increase top_k if needed
+            if self._is_aggregation_query(question) and top_k < 20:
+                self._log_with_context(f"Aggregation query detected, increasing top_k from {top_k} to 20")
+                top_k = 20
             
             # Build context-aware query by considering conversation history
             contextualized_question = self._contextualize_question(question, conversation_history or [])
@@ -202,7 +207,7 @@ class QueryEngine:
             
             # Generate general response (Requirement 7.1) with graceful degradation
             try:
-                answer = self._generate_response(question, results[:5], conversation_history)  # Use all 5 retrieved chunks
+                answer = self._generate_response(question, results, conversation_history)  # Use all retrieved chunks
             except Exception as e:
                 self._log_with_context(
                     "General response generation failed, using fallback",
@@ -321,6 +326,10 @@ class QueryEngine:
         """
         Extract metadata filters from the question.
         
+        Supports both English and Korean queries:
+        - English: "at Costco", "from Walmart", "Costco receipts"
+        - Korean: "코스트코에", "코스트코에서", "코스트코 영수증"
+        
         NOTE: Date filtering is NOT done via metadata filters because different documents
         use different field names (date, transaction_details_timestamp, etc.).
         Instead, we extract the date and use it for post-filtering and context.
@@ -329,12 +338,93 @@ class QueryEngine:
             question: User's question
             
         Returns:
-            Dictionary of metadata filters or None (currently returns None as we don't use metadata filtering)
+            Dictionary of metadata filters in ChromaDB format, or None if no filters detected
         """
-        # Don't use metadata filters - they require exact field name matches
-        # Different documents use different field names (date, timestamp, transaction_details_timestamp, etc.)
-        # Instead, we'll do semantic search and let the LLM filter by date from the context
-        return None
+        import re
+        
+        filters = {}
+        
+        # Extract store name using regex patterns
+        # Strategy: Look for capitalized words (English) or Hangul (Korean) in specific contexts
+        store_patterns = [
+            # English patterns
+            # Pattern 1: "at <Store>" - captures store name after "at"
+            r'\bat\s+([A-Z][A-Za-z\s&]+?)(?:\s+(?:store|receipts?|purchases?|transactions?)|[,.\?!]|$)',
+            # Pattern 2: "from <Store>" - captures store name after "from"
+            r'\bfrom\s+([A-Z][A-Za-z\s&]+?)(?:\s+(?:store|receipts?|purchases?|transactions?)|[,.\?!]|$)',
+            # Pattern 3: "in <Store>" - captures store name after "in"
+            r'\bin\s+([A-Z][A-Za-z\s&]+?)(?:\s+(?:store|receipts?|purchases?|transactions?)|[,.\?!]|$)',
+            # Pattern 4: "<Store> receipts/purchases/transactions"
+            # Match one or more capitalized words immediately before these keywords
+            r'\b([A-Z][A-Za-z]*(?:\s+[A-Z&][A-Za-z]*)*)\s+(?:receipts?|purchases?|transactions?)\b',
+            
+            # Korean patterns
+            # Pattern 5: "<Store>에서" or "<Store>에" (at/from Store)
+            # Match Hangul characters followed by 에서 or 에, but not if preceded by 월 (month)
+            r'(?:^|[^월])([\uac00-\ud7a3]{2,}(?:\s+[\uac00-\ud7a3]+)*)(?:에서|에)(?=\s|$|[^\uac00-\ud7a3])',
+            # Pattern 6: "<Store> 영수증" (Store receipt)
+            r'([\uac00-\ud7a3]{2,}(?:\s+[\uac00-\ud7a3]+)*)\s*영수증',
+        ]
+        
+        store_name = None
+        for pattern in store_patterns:
+            match = re.search(pattern, question)
+            if match:
+                candidate = match.group(1).strip()
+                
+                # Validation: store name should be reasonable length (2-30 chars)
+                if len(candidate) < 2 or len(candidate) > 30:
+                    continue
+                
+                # Skip if it's a date/time word (Korean)
+                date_time_words = ['월', '일', '년', '시', '분', '초', '오전', '오후', '어제', '오늘', '내일']
+                if any(word in candidate for word in date_time_words):
+                    continue
+                
+                # Check if the candidate starts with common question words
+                # These indicate we captured too much context
+                question_starts = ['Show', 'Find', 'All', 'My', 'Me', 'What', 'How', 'When', 'Where', 'Get']
+                
+                # Skip if it starts with a question word (case-sensitive check for capitalized words)
+                if any(candidate.startswith(word) for word in question_starts):
+                    continue
+                
+                # Valid store name found
+                store_name = candidate
+                break
+        
+        if store_name:
+            # Normalize store name: strip whitespace
+            normalized_store = store_name.strip()
+            # ChromaDB expects direct value, not operator format
+            filters['store'] = normalized_store
+        
+        # Return filters if any were extracted, otherwise None
+        return filters if filters else None
+    def _is_aggregation_query(self, question: str) -> bool:
+        """
+        Detect if a query is asking for aggregation across multiple documents.
+
+        Aggregation queries typically contain keywords like:
+        - English: "total", "sum", "all", "how much", "how many"
+        - Korean: "총", "전체", "얼마나", "모두"
+
+        Args:
+            question: User's question text
+
+        Returns:
+            True if the query appears to be an aggregation query
+        """
+        question_lower = question.lower()
+        aggregation_keywords = [
+            # English keywords
+            "total", "sum", "all", "how much", "how many",
+            "overall", "combined", "entire", "whole",
+            "aggregate", "cumulative",
+            # Korean keywords
+            "총", "전체", "얼마나", "모두", "합계", "합산"
+        ]
+        return any(keyword in question_lower for keyword in aggregation_keywords)
     
     def _extract_date(self, question: str) -> Optional[tuple]:
         """

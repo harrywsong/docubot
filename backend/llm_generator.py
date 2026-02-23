@@ -221,13 +221,17 @@ Instructions:
             for i, result in enumerate(retrieved_results):
                 filename = result.metadata.get('filename', f'Document {i+1}')
                 
-                # Extract key metadata fields for the LLM
-                store = result.metadata.get('store', 'N/A')
-                total = result.metadata.get('total', 'N/A')
-                date = result.metadata.get('date', result.metadata.get('transaction_details_date', 'N/A'))
+                # Build metadata summary dynamically from ALL fields (excluding internal fields)
+                metadata_items = []
+                for key, value in result.metadata.items():
+                    # Exclude internal fields (starting with underscore) and filename (already shown)
+                    if not key.startswith('_') and key != 'filename':
+                        # Capitalize first letter of key for display
+                        display_key = key.replace('_', ' ').title()
+                        metadata_items.append(f"{display_key}: {value}")
                 
-                # Build metadata summary
-                metadata_summary = f"Store: {store} | Total: {total} | Date: {date}"
+                # Build metadata summary from all fields
+                metadata_summary = " | ".join(metadata_items) if metadata_items else "N/A"
                 
                 # Truncate each chunk to 600 chars to include totals from JSON receipts
                 truncated_content = result.content[:600] + "..." if len(result.content) > 600 else result.content

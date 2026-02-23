@@ -49,7 +49,7 @@ class TestQueryEngine:
     def test_query_retrieves_top_k_chunks(self, query_engine, mock_embedding_engine, mock_vector_store):
         """Test that query retrieves top-k similar chunks."""
         # Arrange
-        question = "What is the total amount?"
+        question = "What is the receipt date?"  # Non-aggregation query
         mock_vector_store.query.return_value = []
         
         # Act
@@ -59,6 +59,50 @@ class TestQueryEngine:
         mock_vector_store.query.assert_called_once()
         call_args = mock_vector_store.query.call_args
         assert call_args[1]['top_k'] == 5
+    
+    def test_aggregation_query_increases_top_k(self, query_engine, mock_embedding_engine, mock_vector_store):
+        """Test that aggregation queries automatically increase top_k to 20."""
+        # Arrange
+        question = "What is my total spending?"  # Aggregation query with "total"
+        mock_vector_store.query.return_value = []
+        
+        # Act
+        result = query_engine.query(question, user_id=1, top_k=5)
+        
+        # Assert
+        mock_vector_store.query.assert_called_once()
+        call_args = mock_vector_store.query.call_args
+        assert call_args[1]['top_k'] == 20  # Should be increased from 5 to 20
+    
+    def test_aggregation_query_respects_higher_top_k(self, query_engine, mock_embedding_engine, mock_vector_store):
+        """Test that aggregation queries don't decrease top_k if already higher than 20."""
+        # Arrange
+        question = "How much did I spend?"  # Aggregation query with "how much"
+        mock_vector_store.query.return_value = []
+        
+        # Act
+        result = query_engine.query(question, user_id=1, top_k=25)
+        
+        # Assert
+        mock_vector_store.query.assert_called_once()
+        call_args = mock_vector_store.query.call_args
+        assert call_args[1]['top_k'] == 25  # Should remain 25, not decreased to 20
+    
+    def test_is_aggregation_query_detection(self, query_engine):
+        """Test that _is_aggregation_query correctly identifies aggregation queries."""
+        # Test aggregation queries
+        assert query_engine._is_aggregation_query("What is my total spending?") is True
+        assert query_engine._is_aggregation_query("How much did I spend?") is True
+        assert query_engine._is_aggregation_query("Show me all receipts") is True
+        assert query_engine._is_aggregation_query("What's the sum of my purchases?") is True
+        assert query_engine._is_aggregation_query("How many receipts do I have?") is True
+        assert query_engine._is_aggregation_query("Overall spending this month") is True
+        
+        # Test non-aggregation queries
+        assert query_engine._is_aggregation_query("What is the receipt date?") is False
+        assert query_engine._is_aggregation_query("Show me the Costco receipt") is False
+        assert query_engine._is_aggregation_query("What items did I buy?") is False
+
     
     def test_query_returns_no_results_message(self, query_engine, mock_embedding_engine, mock_vector_store):
         """Test that query returns appropriate message when no chunks found."""

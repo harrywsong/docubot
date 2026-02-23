@@ -17,21 +17,32 @@ from backend.models import ImageExtraction
 # Structured prompt for consistent, concise JSON output with only relevant information
 DOCUMENT_EXTRACTION_PROMPT = """Extract key information from this document. Output a JSON object with field names that match the document type.
 
+REQUIRED CANONICAL FIELD NAMES:
+You MUST use these exact field names - do NOT use synonyms or variations:
+- For store/merchant/vendor/shop: ALWAYS use "store"
+- For transaction date/purchase date: ALWAYS use "date"
+- For total amount/grand total/amount: ALWAYS use "total"
+- For subtotal: ALWAYS use "subtotal"
+- For tax amount: ALWAYS use "tax"
+- For payment type/card type: ALWAYS use "payment_method"
+
 RULES:
 1. Use field names appropriate for the document type
 2. Extract each field ONLY ONCE - no duplicates, no translations
 3. Maximum 15 fields
 4. Choose ONE language per field (English preferred)
+5. MUST use canonical field names listed above - no variations allowed
 
 For receipts: store, date, total, subtotal, tax, payment_method
 For ID/passport: document_type, name, birth_date, nationality, document_number, issue_date, expiry_date
 For other documents: document_type, date, issuer, recipient, reference_number
 
 WRONG (DO NOT DO THIS):
-{"store": "Costco", "store_korean": "코스트코", "store_english": "Costco"}
+{"merchant": "Costco", "store_korean": "코스트코", "vendor": "Costco"}
+{"amount": "411.89", "grand_total": "411.89"}
 
 RIGHT (DO THIS):
-{"store": "Costco", "date": "2024-02-08", "total": "411.89"}
+{"store": "Costco", "date": "2024-02-08", "total": "411.89", "subtotal": "380.00", "tax": "31.89"}
 
 Output ONLY valid JSON."""
 
@@ -87,7 +98,7 @@ class ImageProcessor:
             base64_image = encode_image_to_base64(corrected_image_path)
 
             # Send to vision model with JSON format for structured extraction
-            # Use moderate num_predict with strong repeat penalty to prevent loops
+            # Use reduced num_predict with strong repeat penalty to prevent loops
             response = self.client.generate(
                 prompt=DOCUMENT_EXTRACTION_PROMPT,
                 images=[base64_image],
@@ -95,10 +106,10 @@ class ImageProcessor:
                 format="json",  # Request JSON output for structured data extraction
                 options={
                     "num_ctx": 4096,  # Context for document understanding
-                    "num_predict": 2048,  # Moderate limit - forces conciseness
+                    "num_predict": 1024,  # Reduced limit - prevents long responses and repetition
                     "temperature": 0.1,  # Low temperature for consistency
                     "repeat_penalty": 2.0,  # Very strong penalty to prevent repetition loops
-                    "stop": ["}}", "}\n}", "} }"]  # Stop sequences to end JSON properly
+                    "stop": ["}}", "}\n}", "} }", '"}"}', '"\n}', '",\n}', '" }', '"\n\n}']  # Extended stop sequences to end JSON properly
                 }
             )
 
@@ -300,6 +311,12 @@ class ImageProcessor:
         variations (_korean, _english, etc.). This method detects the repetition
         and truncates the JSON at the first complete iteration.
         
+        Enhanced to catch more patterns:
+        - Repeating field sequences (original behavior)
+        - Duplicate field names (same field appearing multiple times)
+        - Excessive length (> 5000 chars indicates likely repetition)
+        - Character-level repetition patterns
+        
         Args:
             raw_text: Raw JSON text from vision model
             
@@ -313,6 +330,21 @@ class ImageProcessor:
         if not raw_text.strip().startswith('{'):
             return raw_text
         
+        # Check for excessive length (likely indicates repetition)
+        if len(raw_text) > 5000:
+            logger.warning(f"Response exceeds 5000 characters ({len(raw_text)} chars), likely repetition")
+            # Try to find a reasonable truncation point
+            # Look for the first complete JSON object (ending with })
+            first_close = raw_text.find('}')
+            if first_close > 100:  # Ensure we have some content
+                # Count braces to find balanced closing
+                open_count = raw_text[:first_close+1].count('{')
+                close_count = raw_text[:first_close+1].count('}')
+                if open_count == close_count:
+                    truncated = raw_text[:first_close+1]
+                    logger.warning(f"Truncated excessive response from {len(raw_text)} to {len(truncated)} chars")
+                    return truncated
+        
         # Look for repeating patterns of field names
         # Extract all field names from the JSON
         field_pattern = r'"([^"]+)":\s*"[^"]*"'
@@ -325,7 +357,24 @@ class ImageProcessor:
         # Get field names in order
         field_names = [m.group(1) for m in matches]
         
-        # Detect repetition: look for a sequence that repeats
+        # Check for duplicate field names (same field appearing multiple times)
+        seen_fields = {}
+        for idx, field_name in enumerate(field_names):
+            if field_name in seen_fields:
+                # Found duplicate field - this is likely the start of repetition
+                first_occurrence = seen_fields[field_name]
+                # Only truncate if we have at least 5 fields before the duplicate
+                if first_occurrence >= 5:
+                    truncate_pos = matches[first_occurrence + 1].start() if first_occurrence + 1 < len(matches) else matches[first_occurrence].end()
+                    fixed_text = raw_text[:truncate_pos].rstrip(', \n\t') + '}'
+                    
+                    logger.warning(f"Detected duplicate field '{field_name}' at position {idx}")
+                    logger.warning(f"Original length: {len(raw_text)}, Fixed length: {len(fixed_text)}")
+                    
+                    return fixed_text
+            seen_fields[field_name] = idx
+        
+        # Detect repeating sequences: look for a sequence that repeats
         # Check if the last 10 fields appear earlier in the sequence
         window_size = 10
         if len(field_names) > window_size * 2:
@@ -344,6 +393,24 @@ class ImageProcessor:
                     logger.warning(f"Repeating fields: {last_fields[:3]}...")
                     
                     return fixed_text
+        
+        # Check for character-level repetition (e.g., same substring repeated)
+        # Look for patterns like "abc abc abc"
+        if len(raw_text) > 1000:
+            # Check if the last 200 chars appear earlier
+            tail = raw_text[-200:]
+            # Search for this tail in the earlier part of the text
+            earlier_occurrence = raw_text[:-200].find(tail)
+            if earlier_occurrence > 100:
+                # Found character-level repetition
+                fixed_text = raw_text[:earlier_occurrence + 200].rstrip(', \n\t')
+                if not fixed_text.endswith('}'):
+                    fixed_text += '}'
+                
+                logger.warning(f"Detected character-level repetition at position {earlier_occurrence}")
+                logger.warning(f"Original length: {len(raw_text)}, Fixed length: {len(fixed_text)}")
+                
+                return fixed_text
         
         # No repetition detected, return as-is
         return raw_text
@@ -453,10 +520,16 @@ class ImageProcessor:
             flattened = flatten_dict(data)
             
             # Filter to keep only the most useful fields
-            flexible_metadata = self._filter_useful_fields(flattened)
+            filtered_metadata = self._filter_useful_fields(flattened)
+            
+            # Normalize field names to canonical forms (merchant/vendor → store, etc.)
+            normalized_metadata = self._normalize_field_names(filtered_metadata)
+            
+            # Coerce numeric string values to numeric types (total, subtotal, tax, etc.)
+            flexible_metadata = self._coerce_numeric_types(normalized_metadata)
             
             # Debug logging
-            logger.debug(f"Parsed JSON with {len(flattened)} flattened fields, filtered to {len(flexible_metadata)} useful fields")
+            logger.debug(f"Parsed JSON with {len(flattened)} flattened fields, filtered to {len(filtered_metadata)} useful fields, normalized to {len(flexible_metadata)} fields")
             if flexible_metadata:
                 logger.debug(f"Kept fields: {list(flexible_metadata.keys())[:10]}")
         
@@ -548,6 +621,112 @@ class ImageProcessor:
                 seen_base_fields[base_key] = key
         
         return filtered
+    def _normalize_field_names(self, fields: Dict[str, str]) -> Dict[str, str]:
+        """
+        Normalize field name variants to canonical names.
+
+        Maps common field name variants to standardized canonical names:
+        - merchant/vendor/shop → store
+        - transaction_date/purchase_date → date
+        - amount/grand_total → total
+
+        This ensures consistent field names across all documents, enabling
+        reliable metadata filtering and aggregation.
+
+        Args:
+            fields: Dictionary of extracted fields with potentially variant names
+
+        Returns:
+            Dictionary with normalized field names
+        """
+        # Define mapping from variants to canonical names
+        field_mappings = {
+            # Store variants
+            'merchant': 'store',
+            'vendor': 'store',
+            'shop': 'store',
+            'retailer': 'store',
+            'seller': 'store',
+
+            # Date variants
+            'transaction_date': 'date',
+            'purchase_date': 'date',
+            'receipt_date': 'date',
+            'sale_date': 'date',
+
+            # Total variants
+            'amount': 'total',
+            'grand_total': 'total',
+            'total_amount': 'total',
+            'final_amount': 'total',
+        }
+
+        normalized = {}
+        for key, value in fields.items():
+            # Convert key to lowercase for case-insensitive matching
+            key_lower = key.lower()
+
+            # Check if this field name has a canonical mapping
+            if key_lower in field_mappings:
+                canonical_name = field_mappings[key_lower]
+                # Only map if canonical name doesn't already exist
+                # (prefer existing canonical names over variants)
+                if canonical_name not in normalized:
+                    normalized[canonical_name] = value
+            else:
+                # Keep original field name if no mapping exists
+                normalized[key] = value
+
+        return normalized
+    def _coerce_numeric_types(self, fields: Dict[str, str]) -> Dict[str, any]:
+        """
+        Coerce string values to numeric types for numeric fields.
+
+        Converts string representations of numbers to float or int types
+        for fields that should be numeric: total, subtotal, tax, amount,
+        price, quantity.
+
+        This enables proper range queries and mathematical operations on
+        numeric metadata fields in ChromaDB.
+
+        Args:
+            fields: Dictionary of extracted fields with string values
+
+        Returns:
+            Dictionary with numeric types for numeric fields
+        """
+        # Define fields that should be numeric
+        numeric_fields = {
+            'total', 'subtotal', 'tax', 'amount', 'price', 'quantity',
+            'discount', 'tip', 'grand_total', 'balance', 'payment_amount'
+        }
+
+        coerced = {}
+        for key, value in fields.items():
+            # Check if this field should be numeric
+            if key.lower() in numeric_fields and isinstance(value, str):
+                try:
+                    # Remove common currency symbols and whitespace
+                    cleaned_value = value.strip().replace('$', '').replace(',', '').replace(' ', '')
+
+                    # Try to convert to float first
+                    numeric_value = float(cleaned_value)
+
+                    # If it's a whole number, convert to int
+                    if numeric_value.is_integer():
+                        coerced[key] = int(numeric_value)
+                    else:
+                        coerced[key] = numeric_value
+                except (ValueError, AttributeError):
+                    # If conversion fails, keep as string
+                    coerced[key] = value
+            else:
+                # Keep non-numeric fields as-is
+                coerced[key] = value
+
+        return coerced
+
+
     
     def _normalize_date(self, date_str: str) -> str:
         """
