@@ -1621,6 +1621,7 @@ async def sync_to_pi(request: dict):
     """
     import subprocess
     import platform
+    import os
     
     pi_host = request.get('pi_host', Config.PI_HOST if hasattr(Config, 'PI_HOST') else 'pi@raspberrypi.local')
     pi_path = request.get('pi_path', Config.PI_PATH if hasattr(Config, 'PI_PATH') else '/home/pi/docubot/data/')
@@ -1630,44 +1631,76 @@ async def sync_to_pi(request: dict):
         
         is_windows = platform.system() == 'Windows'
         
-        # Check if rsync is available
-        rsync_check = subprocess.run(
-            ['rsync', '--version'] if not is_windows else ['where', 'rsync'],
-            capture_output=True,
-            text=True,
-            shell=is_windows
-        )
-        
-        if rsync_check.returncode != 0:
-            raise Exception("rsync not found. Please install rsync (Git Bash, WSL, or Cygwin on Windows)")
-        
-        # Sync ChromaDB vector store
-        logger.info("Syncing ChromaDB vector store...")
-        chromadb_result = subprocess.run(
-            ['rsync', '-avz', '--progress', './data/chromadb/', f'{pi_host}:{pi_path}/chromadb/'],
-            capture_output=True,
-            text=True,
-            shell=is_windows
-        )
-        
-        if chromadb_result.returncode != 0:
-            raise Exception(f"ChromaDB sync failed: {chromadb_result.stderr}")
-        
-        logger.info("ChromaDB sync completed")
-        
-        # Sync SQLite database
-        logger.info("Syncing SQLite database...")
-        db_result = subprocess.run(
-            ['rsync', '-avz', '--progress', './data/app.db', f'{pi_host}:{pi_path}/'],
-            capture_output=True,
-            text=True,
-            shell=is_windows
-        )
-        
-        if db_result.returncode != 0:
-            raise Exception(f"Database sync failed: {db_result.stderr}")
-        
-        logger.info("Database sync completed")
+        # On Windows, use WSL for rsync (more reliable than Git Bash rsync)
+        if is_windows:
+            # Check if WSL is available
+            wsl_check = subprocess.run(
+                ['wsl', '-d', 'Ubuntu', '--', 'which', 'rsync'],
+                capture_output=True,
+                text=True
+            )
+            
+            if wsl_check.returncode != 0:
+                raise Exception("WSL Ubuntu not found or rsync not installed. Please install: wsl --install -d Ubuntu")
+            
+            # Convert Windows path to WSL path
+            current_dir = os.getcwd()
+            # Convert E:\codingprojects\docubot to /mnt/e/codingprojects/docubot
+            wsl_path = current_dir.replace('\\', '/').replace(':', '').lower()
+            wsl_path = f"/mnt/{wsl_path[0]}{wsl_path[1:]}"
+            
+            # Sync ChromaDB vector store using WSL
+            logger.info("Syncing ChromaDB vector store...")
+            chromadb_result = subprocess.run(
+                ['wsl', '-d', 'Ubuntu', '--', 'rsync', '-avz', '--progress', f'{wsl_path}/data/chromadb/', f'{pi_host}:{pi_path}chromadb/'],
+                capture_output=True,
+                text=True
+            )
+            
+            if chromadb_result.returncode != 0:
+                raise Exception(f"ChromaDB sync failed: {chromadb_result.stderr}")
+            
+            logger.info("ChromaDB sync completed")
+            
+            # Sync SQLite database using WSL
+            logger.info("Syncing SQLite database...")
+            db_result = subprocess.run(
+                ['wsl', '-d', 'Ubuntu', '--', 'rsync', '-avz', '--progress', f'{wsl_path}/data/app.db', f'{pi_host}:{pi_path}'],
+                capture_output=True,
+                text=True
+            )
+            
+            if db_result.returncode != 0:
+                raise Exception(f"Database sync failed: {db_result.stderr}")
+            
+            logger.info("Database sync completed")
+        else:
+            # On Linux/Mac, use rsync directly
+            # Sync ChromaDB vector store
+            logger.info("Syncing ChromaDB vector store...")
+            chromadb_result = subprocess.run(
+                ['rsync', '-avz', '--progress', './data/chromadb/', f'{pi_host}:{pi_path}chromadb/'],
+                capture_output=True,
+                text=True
+            )
+            
+            if chromadb_result.returncode != 0:
+                raise Exception(f"ChromaDB sync failed: {chromadb_result.stderr}")
+            
+            logger.info("ChromaDB sync completed")
+            
+            # Sync SQLite database
+            logger.info("Syncing SQLite database...")
+            db_result = subprocess.run(
+                ['rsync', '-avz', '--progress', './data/app.db', f'{pi_host}:{pi_path}'],
+                capture_output=True,
+                text=True
+            )
+            
+            if db_result.returncode != 0:
+                raise Exception(f"Database sync failed: {db_result.stderr}")
+            
+            logger.info("Database sync completed")
         
         # Get sync statistics from rsync output
         chromadb_output = chromadb_result.stdout
@@ -1691,7 +1724,6 @@ async def sync_to_pi(request: dict):
         raise HTTPException(status_code=500, detail=error_msg)
     except Exception as e:
         logger.error(f"Failed to sync to Pi: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 
