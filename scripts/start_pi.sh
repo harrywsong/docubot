@@ -1,6 +1,6 @@
 #!/bin/bash
-# RAG Chatbot Startup Script for Raspberry Pi (Backend Only)
-# This script starts only the backend API server in read-only mode
+# RAG Chatbot Startup Script for Raspberry Pi (Backend + Frontend)
+# This script starts both the backend API server and frontend in read-only mode
 # Run from project root: ./scripts/start_pi.sh
 
 # Change to project root directory
@@ -15,6 +15,14 @@ echo ""
 if ! command -v python3 &> /dev/null; then
     echo "ERROR: Python 3 is not installed"
     echo "Please install Python 3.10 or higher"
+    exit 1
+fi
+
+# Check if Node.js is installed
+if ! command -v node &> /dev/null; then
+    echo "ERROR: Node.js is not installed"
+    echo "Please install Node.js from https://nodejs.org/"
+    echo "Or run: curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs"
     exit 1
 fi
 
@@ -63,6 +71,15 @@ EOF
     echo ".env file created!"
 fi
 
+# Check if frontend dependencies are installed
+if [ ! -d "frontend/node_modules" ]; then
+    echo ""
+    echo "ERROR: Frontend dependencies not installed!"
+    echo "Please run: cd frontend && npm install && cd .."
+    echo ""
+    exit 1
+fi
+
 # Create data directory if it doesn't exist
 mkdir -p data/chromadb
 
@@ -77,17 +94,34 @@ BACKEND_PID=$!
 echo $BACKEND_PID > .pids/backend.pid
 echo "Backend PID: $BACKEND_PID"
 
+# Wait a moment for backend to start
+sleep 3
+
+# Start frontend server
+echo "Starting frontend development server..."
+cd frontend
+npm run dev -- --host 0.0.0.0 > ../frontend.log 2>&1 &
+FRONTEND_PID=$!
+echo $FRONTEND_PID > ../.pids/frontend.pid
+cd ..
+echo "Frontend PID: $FRONTEND_PID"
+
 echo ""
 echo "========================================"
 echo "RAG Chatbot is running on Raspberry Pi!"
 echo "========================================"
 echo ""
 echo "Backend API: http://localhost:8000"
-echo "Access from other devices: http://$(hostname -I | awk '{print $1}'):8000"
+echo "Frontend UI: http://localhost:5173"
+echo ""
+echo "Access from other devices:"
+echo "  http://$(hostname -I | awk '{print $1}'):5173"
 echo ""
 echo "Mode: READ-ONLY (document processing disabled)"
 echo ""
-echo "Logs are being written to: backend.log"
+echo "Logs are being written to:"
+echo "  - backend.log"
+echo "  - frontend.log"
 echo ""
 echo "To stop the application, run: ./scripts/stop.sh"
 echo ""
