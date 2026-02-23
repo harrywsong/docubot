@@ -39,6 +39,13 @@ class Config:
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "qwen3-embedding:8b")  # Multilingual embeddings (Korean + English)
     CONVERSATIONAL_MODEL = os.getenv("CONVERSATIONAL_MODEL", "qwen2.5:7b")  # Better reading comprehension for Pi deployment
     
+    # FAISS mode for Pi (no embedding model needed)
+    USE_FAISS = os.getenv("USE_FAISS", "false").lower() == "true"
+    FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", "data/faiss_index")
+    
+    # Remote embedding API (for Pi to call desktop for embeddings)
+    REMOTE_EMBEDDING_API = os.getenv("REMOTE_EMBEDDING_API", None)  # e.g., "http://192.168.1.100:8000"
+    
     # Export/Import paths for Pi deployment
     EXPORT_DIR = os.getenv("EXPORT_DIR", "pi_export")
     MANIFEST_PATH = os.getenv("MANIFEST_PATH", "data/manifest.json")

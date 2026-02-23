@@ -215,15 +215,28 @@ Instructions:
         # Detect language from question
         is_korean = self._detect_korean(question)
         
-        # Build context from results (with filenames) or chunks (fallback)
+        # Build context from results (with filenames and metadata) or chunks (fallback)
         context_parts = []
         if retrieved_results:
             for i, result in enumerate(retrieved_results):
                 filename = result.metadata.get('filename', f'Document {i+1}')
-                context_parts.append(f"=== {filename} ===\n{result.content}")
+                
+                # Extract key metadata fields for the LLM
+                store = result.metadata.get('store', 'N/A')
+                total = result.metadata.get('total', 'N/A')
+                date = result.metadata.get('date', result.metadata.get('transaction_details_date', 'N/A'))
+                
+                # Build metadata summary
+                metadata_summary = f"Store: {store} | Total: {total} | Date: {date}"
+                
+                # Truncate each chunk to 600 chars to include totals from JSON receipts
+                truncated_content = result.content[:600] + "..." if len(result.content) > 600 else result.content
+                context_parts.append(f"=== {filename} ===\nMetadata: {metadata_summary}\nContent:\n{truncated_content}")
         elif retrieved_chunks:
             for i, chunk in enumerate(retrieved_chunks):
-                context_parts.append(f"=== Document {i+1} ===\n{chunk}")
+                # Truncate each chunk to 600 chars
+                truncated_chunk = chunk[:600] + "..." if len(chunk) > 600 else chunk
+                context_parts.append(f"=== Document {i+1} ===\n{truncated_chunk}")
         
         context = "\n\n".join(context_parts)
         
@@ -239,48 +252,42 @@ Instructions:
         
         # Build prompt with clear instructions
         if is_korean:
-            prompt = f"""당신은 한국어로 대화하는 문서 분석 어시스턴트입니다.
+            prompt = f"""문서 분석 어시스턴트입니다.
 
-중요한 규칙:
-- 반드시 한국어로만 답변하세요
-- 아래 {len(context_parts)}개의 모든 문서를 확인하세요
-- "총", "전체", "모두" 같은 단어가 있으면 관련된 모든 문서를 찾아서 합산하세요
-- 실제 파일명을 사용하세요 (예: IMG_4025.jpeg)
-- 문서에 없는 정보는 추측하지 마세요
-
-합산 예시:
-질문: "코스트코에서 총 얼마 썼어?"
-답변: "코스트코에서 총 $411.89를 사용했습니다 (IMG_4025.jpeg: $222.18, KakaoTalk_xxx.jpg: $189.71)"
+규칙:
+- 한국어로 답변
+- {len(context_parts)}개 문서 확인
+- 각 문서의 메타데이터에서 "store" 필드와 "total" 필드를 확인하세요
+- 질문에서 특정 가게를 물어보면 "store" 필드가 일치하는 문서만 계산 (예: "코스트코" → store: "Costco Wholesale")
+- "총"/"전체" 요청시 해당 가게의 모든 "total" 값을 합산
+- 파일명 사용 (예: IMG_4025.jpeg)
 
 """
             if conv_context:
                 prompt += f"이전 대화:\n{conv_context}\n\n"
             
-            prompt += f"""관련 문서 ({len(context_parts)}개):
+            prompt += f"""문서 ({len(context_parts)}개):
 {context}
 
 질문: {question}
 
 답변:"""
         else:
-            prompt = f"""You are a helpful document analysis assistant.
+            prompt = f"""Document analysis assistant.
 
-Important rules:
-- Answer ONLY in English
-- Check ALL {len(context_parts)} documents provided below
-- If the question asks for "total", "all", or "sum", find ALL related documents and aggregate
-- Use actual filenames (e.g., IMG_4025.jpeg), not "Document 1"
-- Don't make assumptions about information not in the documents
-
-Aggregation example:
-Question: "How much did I spend at Costco in total?"
-Answer: "You spent $411.89 total at Costco (IMG_4025.jpeg: $222.18, KakaoTalk_xxx.jpg: $189.71)"
+Rules:
+- Answer in English
+- Check all {len(context_parts)} documents
+- Look for "store" and "total" fields in each document's metadata
+- If question asks about specific store, only count documents where "store" field matches (e.g., "Costco" → store: "Costco Wholesale")
+- Aggregate all "total" values from matching store documents
+- Use filenames (e.g., IMG_4025.jpeg)
 
 """
             if conv_context:
-                prompt += f"Previous conversation:\n{conv_context}\n\n"
+                prompt += f"Previous:\n{conv_context}\n\n"
             
-            prompt += f"""Relevant documents ({len(context_parts)} documents):
+            prompt += f"""Documents ({len(context_parts)}):
 {context}
 
 Question: {question}

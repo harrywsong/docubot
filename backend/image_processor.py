@@ -69,11 +69,17 @@ class ImageProcessor:
             base64_image = encode_image_to_base64(corrected_image_path)
 
             # Send to vision model with JSON format for structured extraction
+            # Use higher num_predict for vision extraction (needs to output complete JSON)
             response = self.client.generate(
                 prompt=DOCUMENT_EXTRACTION_PROMPT,
                 images=[base64_image],
                 stream=False,
-                format="json"  # Request JSON output for structured data extraction
+                format="json",  # Request JSON output for structured data extraction
+                options={
+                    "num_ctx": 4096,
+                    "num_predict": 2048,  # Very high limit for complete JSON extraction with all items
+                    "temperature": 0.1
+                }
             )
 
             # Extract response text

@@ -93,7 +93,7 @@ class QueryEngine:
         question: str,
         user_id: int,
         conversation_history: List[Dict[str, str]] = None,
-        top_k: int = 5,
+        top_k: int = 3,
         timeout_seconds: int = 10
     ) -> Dict[str, Any]:
         """
@@ -109,7 +109,7 @@ class QueryEngine:
             question: User's current question
             user_id: User ID for filtering documents
             conversation_history: List of previous messages [{"role": "user/assistant", "content": "..."}]
-            top_k: Number of similar chunks to retrieve (default: 5)
+            top_k: Number of similar chunks to retrieve (default: 3)
             timeout_seconds: Query timeout in seconds (default: 10)
             
         Returns:
@@ -202,7 +202,7 @@ class QueryEngine:
             
             # Generate general response (Requirement 7.1) with graceful degradation
             try:
-                answer = self._generate_response(question, results, conversation_history)
+                answer = self._generate_response(question, results[:5], conversation_history)  # Use all 5 retrieved chunks
             except Exception as e:
                 self._log_with_context(
                     "General response generation failed, using fallback",

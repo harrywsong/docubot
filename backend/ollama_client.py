@@ -143,7 +143,8 @@ class OllamaClient:
         images: list[str] = None,
         stream: bool = False,
         keep_alive: str = None,
-        format: str = None
+        format: str = None,
+        options: dict = None  # Allow custom options override
     ) -> Dict[str, Any]:
         """
         Generate response from Ollama model with retry logic.
@@ -169,9 +170,9 @@ class OllamaClient:
             "prompt": prompt,
             "stream": stream,
             "keep_alive": keep_alive or Config.OLLAMA_KEEP_ALIVE,
-            "options": {
-                "num_ctx": 4096,  # Reduced from 8192 for better Pi performance
-                "num_predict": 1024,  # Reduced from 16384 - RAG responses rarely need more
+            "options": options or {
+                "num_ctx": 1536,  # Balanced: not too large (2048) but enough context for accuracy
+                "num_predict": 256,  # Keep short responses for speed
                 "temperature": 0.1 if format == "json" else 0.7,  # Low temp for JSON, higher for natural language
             }
         }

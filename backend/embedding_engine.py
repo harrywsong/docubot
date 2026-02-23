@@ -29,7 +29,7 @@ class EmbeddingEngine:
     - Hardware detection (CUDA vs CPU) for acceleration
     """
     
-    def __init__(self, model_name: str = "mxbai-embed-large", batch_size: int = 32, ollama_endpoint: str = "http://localhost:11434"):
+    def __init__(self, model_name: str = "mxbai-embed-large", batch_size: int = 32, ollama_endpoint: str = "http://localhost:11434", remote_embedding_api: str = None):
         """
         Initialize the embedding engine.
         
@@ -37,16 +37,32 @@ class EmbeddingEngine:
             model_name: Name of the model to use (Ollama or sentence-transformers)
             batch_size: Number of texts to process in each batch
             ollama_endpoint: Ollama API endpoint
+            remote_embedding_api: Optional remote API endpoint for embeddings (e.g., "http://192.168.1.100:8000")
         """
         self.model_name = model_name
         self.batch_size = batch_size
         self.ollama_endpoint = ollama_endpoint
+        self.remote_embedding_api = remote_embedding_api
         self.use_ollama = False
+        self.use_remote = False
         self.device = self._detect_hardware()
         
         logger.info(f"Initializing embedding engine with model: {model_name}")
         
-        # Try to use Ollama first
+        # Try remote API first (if configured)
+        if remote_embedding_api:
+            if self._check_remote_api_available():
+                logger.info(f"✓ Using remote embedding API: {remote_embedding_api}")
+                self.use_remote = True
+                self._embedding_dimension = self._get_remote_dimension()
+                logger.info(f"Embedding engine initialized successfully")
+                logger.info(f"Embedding dimension: {self._embedding_dimension}")
+                return
+            else:
+                logger.warning(f"Remote embedding API not available: {remote_embedding_api}")
+                logger.warning(f"Falling back to local embedding model")
+        
+        # Try to use Ollama
         if self._check_ollama_available():
             logger.info(f"✓ Using Ollama for embeddings: {model_name}")
             logger.info(f"✓ Ollama handles GPU acceleration automatically")
