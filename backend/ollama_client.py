@@ -170,8 +170,8 @@ class OllamaClient:
             "stream": stream,
             "keep_alive": keep_alive or Config.OLLAMA_KEEP_ALIVE,
             "options": {
-                "num_ctx": 8192,  # Increase context window for vision processing
-                "num_predict": 16384,  # Large limit for complete JSON output (up to ~20k chars)
+                "num_ctx": 4096,  # Reduced from 8192 for better Pi performance
+                "num_predict": 1024,  # Reduced from 16384 - RAG responses rarely need more
                 "temperature": 0.1 if format == "json" else 0.7,  # Low temp for JSON, higher for natural language
             }
         }

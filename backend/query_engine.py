@@ -49,12 +49,12 @@ class QueryEngine:
     Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 7.1, 14.2, 14.3, 14.4
     """
     
-    def __init__(self, retrieval_timeout: float = 2.0, similarity_threshold: float = 0.3):
+    def __init__(self, retrieval_timeout: float = 10.0, similarity_threshold: float = 0.3):
         """
         Initialize the query engine.
         
         Args:
-            retrieval_timeout: Maximum time in seconds for retrieval operations (default: 2.0)
+            retrieval_timeout: Maximum time in seconds for retrieval operations (default: 10.0)
             similarity_threshold: Minimum similarity score for results (default: 0.3)
         """
         self.embedding_engine = get_embedding_engine()
@@ -703,12 +703,12 @@ class QueryEngine:
 _query_engine_instance = None
 
 
-def get_query_engine(retrieval_timeout: float = 2.0, similarity_threshold: float = 0.3) -> QueryEngine:
+def get_query_engine(retrieval_timeout: float = 10.0, similarity_threshold: float = 0.3) -> QueryEngine:
     """
     Get or create the singleton query engine instance.
     
     Args:
-        retrieval_timeout: Maximum time in seconds for retrieval operations (default: 2.0)
+        retrieval_timeout: Maximum time in seconds for retrieval operations (default: 10.0)
         similarity_threshold: Minimum similarity score for results (default: 0.3)
     
     Returns:
